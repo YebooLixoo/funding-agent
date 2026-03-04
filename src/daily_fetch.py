@@ -1,6 +1,7 @@
-"""Stage 1: Daily fetch pipeline.
+"""Stage 1: Weekly fetch pipeline.
 
-Runs daily at 12:00 PM noon Mountain Time. Fetches from all sources, deduplicates,
+Runs every Thursday at 12:00 PM noon Mountain Time. Fetches from all sources
+using a 7-day window (last Thursday noon -> this Thursday noon), deduplicates,
 filters by relevance, summarizes, and stores in SQLite.
 
 Usage:
@@ -25,7 +26,7 @@ from src.filter.llm_filter import LLMFilter
 from src.models import Opportunity
 from src.state import StateDB
 from src.summarizer import Summarizer
-from src.utils import now_mt, setup_logging, yesterday_noon_mt
+from src.utils import last_thursday_noon_mt, now_mt, setup_logging
 
 logger = logging.getLogger(__name__)
 
@@ -40,7 +41,9 @@ def load_config() -> DictConfig:
     return cfg
 
 
-async def fetch_government(cfg: DictConfig, window_start: datetime, window_end: datetime) -> list[Opportunity]:
+async def fetch_government(
+    cfg: DictConfig, window_start: datetime, window_end: datetime, model: str
+) -> list[Opportunity]:
     """Fetch from all government API sources in parallel."""
     tasks = []
 
@@ -48,7 +51,7 @@ async def fetch_government(cfg: DictConfig, window_start: datetime, window_end: 
 
     # NSF
     if gov_cfg.get("nsf", {}).get("enabled", False):
-        fetcher = get_fetcher("nsf")
+        fetcher = get_fetcher("nsf", model=model)
         tasks.append(fetcher.fetch(window_start, window_end, list(gov_cfg.nsf.search_keywords)))
 
     # Grants.gov
@@ -71,7 +74,9 @@ async def fetch_government(cfg: DictConfig, window_start: datetime, window_end: 
     return opportunities
 
 
-async def fetch_industry(cfg: DictConfig, window_start: datetime, window_end: datetime) -> list[Opportunity]:
+async def fetch_industry(
+    cfg: DictConfig, window_start: datetime, window_end: datetime, model: str
+) -> list[Opportunity]:
     """Fetch from all industry web sources in parallel."""
     industry_cfg = cfg.get("industry", {})
     sources = industry_cfg.get("sources", [])
@@ -79,7 +84,7 @@ async def fetch_industry(cfg: DictConfig, window_start: datetime, window_end: da
     if not sources:
         return []
 
-    scraper = WebScraperFetcher()
+    scraper = WebScraperFetcher(model=model)
     tasks = [
         scraper.fetch_source(
             name=src["name"],
@@ -105,23 +110,24 @@ async def fetch_industry(cfg: DictConfig, window_start: datetime, window_end: da
 
 
 async def run_pipeline(cfg: DictConfig) -> None:
-    """Execute the full daily fetch pipeline."""
+    """Execute the weekly fetch pipeline."""
     db = StateDB(cfg.project.db_path)
+    model = cfg.get("llm", {}).get("model", "gpt-5.2")
 
-    # Step 1: Determine fetch window (Mountain Time)
+    # Step 1: Determine fetch window (7-day window, Mountain Time)
     last_end = db.get_last_successful_fetch_end()
     if last_end is not None:
         window_start = last_end
     else:
-        window_start = yesterday_noon_mt()
+        window_start = last_thursday_noon_mt()
     window_end = now_mt()
 
-    logger.info(f"Fetch window: {window_start.isoformat()} → {window_end.isoformat()}")
+    logger.info(f"Fetch window: {window_start.isoformat()} -> {window_end.isoformat()}")
 
     # Step 2: Fetch from all sources in parallel
     gov_opps, ind_opps = await asyncio.gather(
-        fetch_government(cfg, window_start, window_end),
-        fetch_industry(cfg, window_start, window_end),
+        fetch_government(cfg, window_start, window_end, model),
+        fetch_industry(cfg, window_start, window_end, model),
     )
 
     all_opps = gov_opps + ind_opps
@@ -150,7 +156,7 @@ async def run_pipeline(cfg: DictConfig) -> None:
 
     # LLM filter for borderline cases
     if borderline:
-        llm_filter = LLMFilter(model=cfg.get("llm", {}).get("model", "gpt-5.2"))
+        llm_filter = LLMFilter(model=model)
         llm_accepted = await llm_filter.filter_borderline(
             borderline, threshold=filter_cfg.get("llm_threshold", 0.5)
         )
@@ -165,7 +171,7 @@ async def run_pipeline(cfg: DictConfig) -> None:
         return
 
     # Step 5: Summarize
-    summarizer = Summarizer(model=cfg.get("llm", {}).get("model", "gpt-5.2"))
+    summarizer = Summarizer(model=model)
     summarized = await summarizer.summarize_batch(accepted)
 
     # Step 6: Store in SQLite
@@ -191,13 +197,13 @@ def main() -> None:
     load_dotenv()
     setup_logging("daily_fetch")
     cfg = load_config()
-    logger.info("Starting daily fetch pipeline")
+    logger.info("Starting weekly fetch pipeline")
 
     try:
         asyncio.run(run_pipeline(cfg))
-        logger.info("Daily fetch completed successfully")
+        logger.info("Weekly fetch completed successfully")
     except Exception:
-        logger.exception("Daily fetch failed")
+        logger.exception("Weekly fetch failed")
         sys.exit(1)
 
 

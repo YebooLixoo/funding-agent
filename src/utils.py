@@ -11,18 +11,30 @@ from rich.logging import RichHandler
 
 
 def setup_logging(name: str = "funding_agent", log_dir: str = "outputs/logs") -> logging.Logger:
-    """Configure logging with Rich handler and file output."""
+    """Configure logging with Rich handler and file output.
+
+    Configures the 'src' parent logger so all src.* module loggers
+    (e.g. src.daily_fetch, src.fetcher.nsf) inherit the handlers.
+
+    Args:
+        name: Base name for the log file (e.g. 'daily_fetch').
+        log_dir: Directory for log files.
+
+    Returns:
+        The 'src' logger with handlers attached.
+    """
     log_path = Path(log_dir)
     log_path.mkdir(parents=True, exist_ok=True)
 
-    logger = logging.getLogger(name)
-    logger.setLevel(logging.DEBUG)
+    # Configure the 'src' parent logger so all src.* module loggers inherit handlers
+    src_logger = logging.getLogger("src")
+    src_logger.setLevel(logging.DEBUG)
 
-    if not logger.handlers:
+    if not src_logger.handlers:
         # Console handler with Rich
         console = RichHandler(rich_tracebacks=True, markup=True)
         console.setLevel(logging.INFO)
-        logger.addHandler(console)
+        src_logger.addHandler(console)
 
         # File handler
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -31,9 +43,9 @@ def setup_logging(name: str = "funding_agent", log_dir: str = "outputs/logs") ->
         file_handler.setFormatter(
             logging.Formatter("%(asctime)s | %(name)s | %(levelname)s | %(message)s")
         )
-        logger.addHandler(file_handler)
+        src_logger.addHandler(file_handler)
 
-    return logger
+    return src_logger
 
 
 MOUNTAIN_TZ = ZoneInfo("America/Denver")
@@ -49,6 +61,19 @@ def yesterday_noon_mt() -> datetime:
     now = now_mt()
     yesterday = now - timedelta(days=1)
     return yesterday.replace(hour=12, minute=0, second=0, microsecond=0)
+
+
+def last_thursday_noon_mt() -> datetime:
+    """Last Thursday at 12:00 PM Mountain Time.
+
+    If today is Thursday, returns the previous Thursday (7 days ago).
+    """
+    now = now_mt()
+    days_since_thursday = (now.weekday() - 3) % 7
+    if days_since_thursday == 0:
+        days_since_thursday = 7
+    last_thu = now - timedelta(days=days_since_thursday)
+    return last_thu.replace(hour=12, minute=0, second=0, microsecond=0)
 
 
 def today_noon_mt() -> datetime:

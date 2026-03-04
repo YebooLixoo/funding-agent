@@ -31,6 +31,8 @@ from src.fetcher.grants_gov import GrantsGovFetcher  # noqa: E402, F401
 from src.fetcher.nsf import NSFFetcher  # noqa: E402, F401
 from src.fetcher.web_scraper import WebScraperFetcher  # noqa: E402, F401
 
+from src.fetcher.opportunity_validator import OpportunityValidator  # noqa: E402, F401
+
 __all__ = [
     "FETCHER_REGISTRY",
     "register_fetcher",
@@ -38,4 +40,5 @@ __all__ = [
     "NSFFetcher",
     "GrantsGovFetcher",
     "WebScraperFetcher",
+    "OpportunityValidator",
 ]

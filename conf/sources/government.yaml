@@ -2,7 +2,6 @@ government:
   nsf:
     enabled: true
     name: "NSF"
-    api_url: "http://api.nsf.gov/services/v1/awards.json"
     rss_url: "https://www.nsf.gov/rss/rss_www_funding.xml"
     search_keywords:
       - "artificial intelligence"
@@ -18,6 +17,9 @@ government:
     # API key provided via GRANTS_GOV_API_KEY env var
     rate_limit_per_minute: 60
     search_keywords:
-      - "artificial intelligence AND transportation"
-      - "machine learning AND infrastructure"
-      - "autonomous vehicle"
+      - "artificial intelligence"
+      - "machine learning"
+      - "transportation"
+      - "autonomous vehicles"
+      - "deep learning"
+      - "smart infrastructure"

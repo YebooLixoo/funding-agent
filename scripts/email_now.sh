@@ -1,7 +1,7 @@
 #!/bin/bash
 # Manual trigger: run the weekly email pipeline in TEST mode.
 # Sends only to bo.yu@utah.edu and does NOT mark opportunities as emailed.
-# Use --prod to send to all recipients (same as scheduled run).
+# Use --prod to send to all recipients (same as scheduled Thursday 8 PM run).
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"

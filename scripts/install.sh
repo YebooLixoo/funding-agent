@@ -1,5 +1,5 @@
 #!/bin/bash
-# Install LaunchAgents for funding-agent daily fetch and weekly email.
+# Install LaunchAgents for funding-agent weekly fetch and email.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -20,8 +20,8 @@ launchctl load "$LAUNCH_AGENTS_DIR/com.boyu.funding-agent.daily.plist"
 launchctl load "$LAUNCH_AGENTS_DIR/com.boyu.funding-agent.weekly.plist"
 
 echo "Installed and loaded:"
-echo "  - com.boyu.funding-agent.daily  (every day at 12:00 PM MT)"
-echo "  - com.boyu.funding-agent.weekly (every Thursday at 8:00 PM MT)"
+echo "  - com.boyu.funding-agent.daily  (every Thursday at 12:00 PM MT - fetch)"
+echo "  - com.boyu.funding-agent.weekly (every Thursday at  8:00 PM MT - email)"
 echo ""
 echo "Check status with:"
 echo "  launchctl list | grep funding-agent"

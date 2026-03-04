@@ -16,6 +16,9 @@
     <string>/Users/boyu/funding-agent</string>
     <key>StartCalendarInterval</key>
     <dict>
+        <!-- Thursday = Weekday 4 -->
+        <key>Weekday</key>
+        <integer>4</integer>
         <key>Hour</key>
         <integer>12</integer>
         <key>Minute</key>

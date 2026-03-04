@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 from src.fetcher import register_fetcher
@@ -23,6 +23,7 @@ class GrantsGovFetcher(BaseFetcher):
 
     Rate limit: 60 requests/minute.
     Uses POST with JSON body for search.
+    Validates deadlines: skips opportunities with past deadlines.
     """
 
     source_name = "grants_gov"
@@ -43,8 +44,10 @@ class GrantsGovFetcher(BaseFetcher):
             return []
 
         keywords = keywords or [
-            "artificial intelligence AND transportation",
-            "machine learning AND infrastructure",
+            "artificial intelligence",
+            "machine learning",
+            "transportation",
+            "autonomous vehicles",
         ]
         results: list[Opportunity] = []
         seen_ids: set[str] = set()
@@ -96,8 +99,17 @@ class GrantsGovFetcher(BaseFetcher):
         resp = await self._post(_BASE_URL, json=body, headers=headers)
         data = resp.json()
 
+        now = datetime.now(timezone.utc)
         opportunities = []
         for item in data.get("data", []):
+            # Validate deadline: skip past deadlines
+            close_date = parse_date(item.get("close_date", ""))
+            if close_date and close_date < now:
+                logger.debug(
+                    f"Grants.gov: skipping past deadline: {item.get('opportunity_title', '')[:60]}"
+                )
+                continue
+
             opp = Opportunity(
                 source=self.source_name,
                 source_id=str(item.get("opportunity_id", "")),
@@ -106,7 +118,7 @@ class GrantsGovFetcher(BaseFetcher):
                     if isinstance(item.get("summary"), dict) else "",
                 url=f"https://simpler.grants.gov/opportunity/{item.get('opportunity_id', '')}",
                 source_type=self.source_type,
-                deadline=parse_date(item.get("close_date", "")),
+                deadline=close_date,
                 posted_date=parse_date(item.get("post_date", "")),
                 funding_amount=item.get("estimated_total_program_funding"),
             )
