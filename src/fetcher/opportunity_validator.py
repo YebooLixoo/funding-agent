@@ -6,6 +6,7 @@ Identifies only real, active, currently-open funding opportunities.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 from datetime import datetime, timezone
@@ -16,35 +17,55 @@ from src.utils import parse_date
 
 logger = logging.getLogger(__name__)
 
-_SYSTEM_PROMPT = """You are a funding opportunity validator for academic researchers.
+_SYSTEM_PROMPT = """You are a strict funding opportunity validator for academic researchers.
 Your job is to identify ONLY real, active, currently-open funding opportunities
-(grants, awards, fellowships, RFPs, calls for proposals).
+(grants, awards, fellowships, RFPs, calls for proposals) that are CURRENTLY
+ACCEPTING APPLICATIONS.
 
-Reject:
+You MUST reject:
+- Programs that exist but are NOT currently accepting applications
 - Past/closed opportunities (deadline already passed)
-- General company pages, news articles, product announcements
+- General company/lab pages that describe research areas but have no active call
 - Already-funded awards or completed projects
 - Job postings, internships, or hiring pages
-- Generic research lab descriptions with no active call"""
+- News articles, blog posts, product announcements
+- Generic program descriptions without a specific open call
+- Pages that say "check back later" or "applications will open soon"
+
+A valid opportunity MUST have at least one of:
+- An explicit application deadline in the future
+- An explicit "applications now open" or "currently accepting" statement
+- A "rolling deadline" or "open until filled" statement"""
 
 _PAGE_VALIDATE_TEMPLATE = """Analyze this web page content from "{label}" ({url}).
 
-Extract ALL real, currently-open funding opportunities. For each one, provide:
-- title: The opportunity name
-- description: 1-2 sentence summary
-- deadline: Application deadline (ISO format YYYY-MM-DD, or null if unknown)
+FIRST: Is this page primarily about active funding opportunities, grants, or awards
+that are CURRENTLY ACCEPTING APPLICATIONS? If the page is a general research homepage,
+news page, or describes programs that are not currently open, return [].
+
+ONLY if there are real, currently-open opportunities, extract each one with:
+- title: The specific opportunity/program name
+- description: 1-2 sentence summary of what is funded
+- deadline: Application deadline (ISO YYYY-MM-DD). Use null ONLY if the page
+  explicitly states "rolling deadline" or "open until filled"
+- deadline_status: One of "explicit_date", "rolling", "not_found"
 - funding_amount: Dollar amount if mentioned, or null
-- confidence: 0.0-1.0 how confident this is a real, open opportunity
+- confidence: 0.0-1.0 how confident this is a real, CURRENTLY OPEN opportunity
+  - 0.9+: Explicit deadline + clear application instructions
+  - 0.7-0.8: Rolling/open deadline with clear "apply now" language
+  - 0.5-0.6: Program exists but unclear if currently accepting
+  - Below 0.5: General description, likely not an active call
 
 Today's date: {today}
 
 Page content (truncated):
 {content}
 
-Respond with ONLY a JSON array. If no real opportunities found, return [].
-Example: [{{"title": "...", "description": "...", "deadline": "2026-06-15", "funding_amount": "$50K", "confidence": 0.8}}]"""
+Respond with ONLY a JSON array. If no currently-open opportunities found, return [].
+Example: [{{"title": "...", "description": "...", "deadline": "2026-06-15", "deadline_status": "explicit_date", "funding_amount": "$50K", "confidence": 0.9}}]"""
 
-_ITEM_VALIDATE_TEMPLATE = """Is this a real, currently-open funding opportunity (grant, award, RFP, call for proposals)?
+_ITEM_VALIDATE_TEMPLATE = """Is this a real, currently-open funding opportunity
+(grant, award, RFP, call for proposals) that is CURRENTLY ACCEPTING APPLICATIONS?
 
 Title: {title}
 Description: {description}
@@ -55,6 +76,9 @@ Today's date: {today}
 
 Respond with ONLY a JSON object:
 {{"is_valid": true/false, "confidence": 0.0-1.0, "reason": "brief explanation"}}"""
+
+# Confidence threshold for accepting opportunities
+_PAGE_CONFIDENCE_THRESHOLD = 0.6
 
 
 class OpportunityValidator:
@@ -83,14 +107,16 @@ class OpportunityValidator:
         url: str,
         label: str,
         source_name: str,
+        source_type: str = "industry",
     ) -> list[Opportunity]:
-        """Validate industry page content and extract real opportunities.
+        """Validate page content and extract real, open opportunities.
 
         Args:
             text: Cleaned page text content.
             url: Source URL.
             label: Human-readable source label.
             source_name: Source identifier for Opportunity.source field.
+            source_type: 'industry' or 'government'.
 
         Returns:
             List of validated Opportunity objects. Empty if no real ones found.
@@ -119,7 +145,7 @@ class OpportunityValidator:
                 ],
             )
             raw = response.choices[0].message.content.strip()
-            return self._parse_page_response(raw, url, source_name)
+            return self._parse_page_response(raw, url, source_name, source_type)
         except Exception:
             logger.exception(f"Page validation failed for {label}")
             return []
@@ -172,7 +198,7 @@ class OpportunityValidator:
             return True, 0.5, "Validation error, accepting by default"
 
     def _parse_page_response(
-        self, raw: str, url: str, source_name: str
+        self, raw: str, url: str, source_name: str, source_type: str = "industry"
     ) -> list[Opportunity]:
         """Parse LLM page validation response into Opportunity objects."""
         # Strip markdown code fences if present
@@ -196,24 +222,38 @@ class OpportunityValidator:
 
         for item in items:
             confidence = float(item.get("confidence", 0.0))
-            if confidence < 0.5:
+            if confidence < _PAGE_CONFIDENCE_THRESHOLD:
+                logger.debug(
+                    f"Rejected (confidence={confidence:.2f}): {item.get('title', '')[:60]}"
+                )
                 continue
 
             deadline = parse_date(item.get("deadline") or "")
             if deadline and deadline < now:
+                logger.debug(
+                    f"Rejected (past deadline): {item.get('title', '')[:60]}"
+                )
                 continue
 
-            import hashlib
+            # Reject entries with no deadline unless explicitly rolling
+            deadline_status = item.get("deadline_status", "not_found")
+            if not deadline and deadline_status not in ("rolling",):
+                logger.debug(
+                    f"Rejected (no deadline, status={deadline_status}): "
+                    f"{item.get('title', '')[:60]}"
+                )
+                continue
+
             title = item.get("title", "")
             item_hash = hashlib.md5(title.encode()).hexdigest()[:8]
 
             opp = Opportunity(
                 source=source_name,
                 source_id=f"{source_name}_{item_hash}",
-                title=f"{title}",
+                title=title,
                 description=item.get("description", ""),
                 url=url,
-                source_type="industry",
+                source_type=source_type,
                 deadline=deadline,
                 funding_amount=item.get("funding_amount"),
                 posted_date=now,

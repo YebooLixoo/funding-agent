@@ -1,58 +1,20 @@
 industry:
   sources:
-    - name: amazon
-      label: "Amazon Research Awards"
-      url: "https://www.amazon.science/research-awards"
-      relevance: high
-
-    - name: google
-      label: "Google Research Scholar"
-      url: "https://research.google/programs-and-events/research-scholar-program/"
-      relevance: high
+    # --- Verified funding program pages ---
 
     - name: nvidia
       label: "NVIDIA Academic Hardware Grant"
       url: "https://www.nvidia.com/en-us/industries/higher-education-research/academic-grant-program/"
       relevance: very_high
 
-    - name: microsoft
-      label: "Microsoft Azure Research Credits"
-      url: "https://www.microsoft.com/en-us/azure-academic-research/"
-      relevance: medium
-
-    - name: meta
-      label: "Meta Llama Impact Grants"
-      url: "https://www.llama.com/llama-ai-innovation/"
-      relevance: medium
-
-    - name: apple
-      label: "Apple Scholars in AI/ML"
-      url: "https://machinelearning.apple.com/"
-      relevance: medium
+    - name: google
+      label: "Google Research Scholar"
+      url: "https://research.google/programs-and-events/research-scholar-program/"
+      relevance: high
 
     - name: qualcomm
       label: "Qualcomm Innovation Fellowship"
       url: "https://www.qualcomm.com/research/university-relations/innovation-fellowship"
-      relevance: high
-
-    - name: samsung
-      label: "Samsung Global Research Outreach"
-      url: "https://semiconductor.samsung.com/sait/event/global-research-outreach/"
-      relevance: medium
-
-    - name: toyota
-      label: "Toyota Research Institute"
-      url: "https://www.tri.global/"
-      relevance: very_high
-
-    - name: ford
-      label: "Ford University Research"
-      url: "https://research.ford.com/"
-      relevance: very_high
-
-    - name: bosch
-      label: "Bosch University Partnerships"
-      url: "https://www.bosch.com/research/"
       relevance: high
 
     - name: cisco
@@ -70,12 +32,24 @@ industry:
       url: "https://research.adobe.com/data-science-research-awards/"
       relevance: low
 
-    - name: doe
-      label: "DOE Funding Opportunities"
-      url: "https://www.energy.gov/funding-financing"
+    - name: amazon
+      label: "Amazon Research Awards"
+      url: "https://www.amazon.science/research-awards"
       relevance: high
 
-    - name: usdot
-      label: "USDOT Grant Programs"
-      url: "https://www.transportation.gov/grants"
-      relevance: very_high
+    - name: microsoft
+      label: "Microsoft Research Grants"
+      url: "https://www.microsoft.com/en-us/research/academic-programs/"
+      relevance: medium
+
+    - name: samsung
+      label: "Samsung Global Research Outreach"
+      url: "https://semiconductor.samsung.com/sait/event/global-research-outreach/"
+      relevance: medium
+
+    # Removed: Apple (machinelearning.apple.com - ML blog, no funding page)
+    # Removed: Meta (llama.com - product page, not funding)
+    # Removed: Toyota (tri.global - general homepage, no funding calls)
+    # Removed: Ford (research.ford.com - general homepage, no funding calls)
+    # Removed: Bosch (bosch.com/research - general homepage, no funding calls)
+    # Moved to government: DOE, USDOT

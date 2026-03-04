@@ -31,8 +31,9 @@ class WebScraperFetcher(BaseFetcher):
     # Content hashes from previous runs (in-memory cache per session)
     _content_hashes: dict[str, str] = {}
 
-    def __init__(self, model: str = "gpt-5.2", **kwargs) -> None:
+    def __init__(self, model: str = "gpt-5.2", source_type: str = "industry", **kwargs) -> None:
         super().__init__(**kwargs)
+        self.source_type = source_type
         self.validator = OpportunityValidator(model=model)
 
     async def fetch(
@@ -94,6 +95,7 @@ class WebScraperFetcher(BaseFetcher):
             url=url,
             label=label,
             source_name=name,
+            source_type=self.source_type,
         )
 
         logger.info(f"{label}: found {len(opportunities)} validated opportunities")

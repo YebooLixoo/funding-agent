@@ -44,7 +44,7 @@ def load_config() -> DictConfig:
 async def fetch_government(
     cfg: DictConfig, window_start: datetime, window_end: datetime, model: str
 ) -> list[Opportunity]:
-    """Fetch from all government API sources in parallel."""
+    """Fetch from all government API sources and web pages in parallel."""
     tasks = []
 
     gov_cfg = cfg.get("government", {})
@@ -59,6 +59,19 @@ async def fetch_government(
         fetcher = get_fetcher("grants_gov")
         tasks.append(fetcher.fetch(window_start, window_end, list(gov_cfg.grants_gov.search_keywords)))
 
+    # Government web sources (DOE, USDOT, etc.)
+    web_sources = gov_cfg.get("web_sources", [])
+    if web_sources:
+        scraper = WebScraperFetcher(model=model, source_type="government")
+        for src in web_sources:
+            tasks.append(scraper.fetch_source(
+                name=src["name"],
+                label=src["label"],
+                url=src["url"],
+                window_start=window_start,
+                window_end=window_end,
+            ))
+
     if not tasks:
         return []
 
@@ -70,6 +83,10 @@ async def fetch_government(
             logger.error(f"Government fetch error: {result}")
         else:
             opportunities.extend(result)
+
+    # Close government web scraper if created
+    if web_sources:
+        await scraper.close()
 
     return opportunities
 

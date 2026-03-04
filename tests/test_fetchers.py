@@ -9,7 +9,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from src.fetcher import FETCHER_REGISTRY, get_fetcher
-from src.fetcher.opportunity_validator import OpportunityValidator
+from src.fetcher.opportunity_validator import OpportunityValidator, _PAGE_CONFIDENCE_THRESHOLD
 from src.fetcher.web_scraper import WebScraperFetcher
 from src.models import Opportunity
 
@@ -37,6 +37,14 @@ class TestWebScraper:
         scraper = WebScraperFetcher(model="gpt-5.2")
         assert scraper.validator.model == "gpt-5.2"
 
+    def test_scraper_accepts_source_type(self):
+        scraper = WebScraperFetcher(source_type="government")
+        assert scraper.source_type == "government"
+
+    def test_scraper_default_source_type(self):
+        scraper = WebScraperFetcher()
+        assert scraper.source_type == "industry"
+
 
 class TestOpportunityValidator:
     def test_init_default_model(self):
@@ -47,13 +55,19 @@ class TestOpportunityValidator:
         validator = OpportunityValidator(model="gpt-4o")
         assert validator.model == "gpt-4o"
 
-    def test_parse_page_response_valid(self):
+    def test_confidence_threshold(self):
+        assert _PAGE_CONFIDENCE_THRESHOLD == 0.6
+
+    # --- Page response parsing ---
+
+    def test_parse_page_response_valid_with_deadline(self):
         validator = OpportunityValidator()
         raw = json.dumps([
             {
                 "title": "AI Research Grant",
                 "description": "Funding for AI research",
                 "deadline": "2027-06-15",
+                "deadline_status": "explicit_date",
                 "funding_amount": "$50K",
                 "confidence": 0.9,
             }
@@ -63,6 +77,65 @@ class TestOpportunityValidator:
         assert opps[0].title == "AI Research Grant"
         assert opps[0].source == "test"
         assert opps[0].funding_amount == "$50K"
+        assert opps[0].source_type == "industry"
+
+    def test_parse_page_response_government_source_type(self):
+        validator = OpportunityValidator()
+        raw = json.dumps([
+            {
+                "title": "DOE Grant",
+                "description": "Energy research",
+                "deadline": "2027-06-15",
+                "deadline_status": "explicit_date",
+                "confidence": 0.9,
+            }
+        ])
+        opps = validator._parse_page_response(raw, "https://example.com", "doe", "government")
+        assert len(opps) == 1
+        assert opps[0].source_type == "government"
+
+    def test_parse_page_response_rolling_deadline_accepted(self):
+        validator = OpportunityValidator()
+        raw = json.dumps([
+            {
+                "title": "Rolling Grant",
+                "description": "Always open",
+                "deadline": None,
+                "deadline_status": "rolling",
+                "confidence": 0.8,
+            }
+        ])
+        opps = validator._parse_page_response(raw, "https://example.com", "test")
+        assert len(opps) == 1
+
+    def test_parse_page_response_no_deadline_rejected(self):
+        """Opportunities with no deadline and no rolling status are rejected."""
+        validator = OpportunityValidator()
+        raw = json.dumps([
+            {
+                "title": "Amazon Research Awards",
+                "description": "A program that exists but unclear if open",
+                "deadline": None,
+                "deadline_status": "not_found",
+                "confidence": 0.7,
+            }
+        ])
+        opps = validator._parse_page_response(raw, "https://example.com", "test")
+        assert len(opps) == 0
+
+    def test_parse_page_response_no_deadline_status_field_rejected(self):
+        """Missing deadline_status field defaults to rejection when no deadline."""
+        validator = OpportunityValidator()
+        raw = json.dumps([
+            {
+                "title": "Some Program",
+                "description": "General description",
+                "deadline": None,
+                "confidence": 0.7,
+            }
+        ])
+        opps = validator._parse_page_response(raw, "https://example.com", "test")
+        assert len(opps) == 0
 
     def test_parse_page_response_low_confidence(self):
         validator = OpportunityValidator()
@@ -71,7 +144,23 @@ class TestOpportunityValidator:
                 "title": "Maybe a grant",
                 "description": "Unclear",
                 "deadline": "2027-06-15",
+                "deadline_status": "explicit_date",
                 "confidence": 0.3,
+            }
+        ])
+        opps = validator._parse_page_response(raw, "https://example.com", "test")
+        assert len(opps) == 0
+
+    def test_parse_page_response_borderline_confidence_rejected(self):
+        """Confidence at 0.5 is below new 0.6 threshold."""
+        validator = OpportunityValidator()
+        raw = json.dumps([
+            {
+                "title": "Borderline Grant",
+                "description": "Might be real",
+                "deadline": "2027-06-15",
+                "deadline_status": "explicit_date",
+                "confidence": 0.5,
             }
         ])
         opps = validator._parse_page_response(raw, "https://example.com", "test")
@@ -84,6 +173,7 @@ class TestOpportunityValidator:
                 "title": "Expired Grant",
                 "description": "Already closed",
                 "deadline": "2020-01-01",
+                "deadline_status": "explicit_date",
                 "confidence": 0.9,
             }
         ])
@@ -98,7 +188,7 @@ class TestOpportunityValidator:
 
     def test_parse_page_response_markdown_fenced(self):
         validator = OpportunityValidator()
-        raw = '```json\n[{"title": "Grant", "description": "Desc", "deadline": "2027-12-01", "confidence": 0.8}]\n```'
+        raw = '```json\n[{"title": "Grant", "description": "Desc", "deadline": "2027-12-01", "deadline_status": "explicit_date", "confidence": 0.8}]\n```'
         opps = validator._parse_page_response(raw, "https://example.com", "test")
         assert len(opps) == 1
 
@@ -107,6 +197,8 @@ class TestOpportunityValidator:
         raw = "This is not JSON"
         opps = validator._parse_page_response(raw, "https://example.com", "test")
         assert len(opps) == 0
+
+    # --- Item response parsing ---
 
     def test_parse_item_response_valid(self):
         validator = OpportunityValidator()
@@ -130,9 +222,10 @@ class TestOpportunityValidator:
         assert is_valid is True  # defaults to accepting
         assert confidence == 0.5
 
+    # --- Client unavailable fallbacks ---
+
     def test_validate_page_content_no_client(self):
         validator = OpportunityValidator()
-        # Without OpenAI configured, should return empty
         with patch.object(validator, "_get_client", return_value=None):
             result = validator.validate_page_content("text", "url", "label", "src")
             assert result == []

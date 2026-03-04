@@ -23,3 +23,15 @@ government:
       - "autonomous vehicles"
       - "deep learning"
       - "smart infrastructure"
+
+  # Government web pages (scraped like industry but categorized as government)
+  web_sources:
+    - name: doe
+      label: "DOE Funding Opportunities"
+      url: "https://www.energy.gov/funding-financing"
+      relevance: high
+
+    - name: usdot
+      label: "USDOT Grant Programs"
+      url: "https://www.transportation.gov/grants"
+      relevance: very_high
