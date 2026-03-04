@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Funding Digest - {{ date }}</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+      color: #333;
+      max-width: 700px;
+      margin: 0 auto;
+      padding: 20px;
+      background-color: #f5f5f5;
+    }
+    .header {
+      background-color: #CC0000;
+      color: white;
+      padding: 24px;
+      border-radius: 8px 8px 0 0;
+      text-align: center;
+    }
+    .header h1 {
+      margin: 0;
+      font-size: 24px;
+      font-weight: 600;
+    }
+    .header .date {
+      margin-top: 8px;
+      font-size: 14px;
+      opacity: 0.9;
+    }
+    .header .count {
+      margin-top: 4px;
+      font-size: 16px;
+      font-weight: 500;
+    }
+    .content {
+      background-color: white;
+      padding: 24px;
+      border-radius: 0 0 8px 8px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    .section {
+      margin-bottom: 28px;
+    }
+    .section-title {
+      font-size: 18px;
+      font-weight: 600;
+      color: #CC0000;
+      border-bottom: 2px solid #CC0000;
+      padding-bottom: 8px;
+      margin-bottom: 16px;
+    }
+    .source-group {
+      margin-bottom: 20px;
+    }
+    .source-name {
+      font-size: 14px;
+      font-weight: 600;
+      color: #666;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 8px;
+    }
+    .opportunity {
+      padding: 12px 16px;
+      margin-bottom: 12px;
+      border-left: 3px solid #CC0000;
+      background-color: #fafafa;
+      border-radius: 0 4px 4px 0;
+    }
+    .opp-title {
+      font-size: 15px;
+      font-weight: 600;
+      margin-bottom: 6px;
+    }
+    .opp-title a {
+      color: #CC0000;
+      text-decoration: none;
+    }
+    .opp-title a:hover {
+      text-decoration: underline;
+    }
+    .opp-summary {
+      font-size: 13px;
+      color: #555;
+      line-height: 1.5;
+      margin-bottom: 6px;
+    }
+    .opp-meta {
+      font-size: 12px;
+      color: #888;
+    }
+    .opp-meta span {
+      margin-right: 12px;
+    }
+    .deadline-badge {
+      display: inline-block;
+      background-color: #CC0000;
+      color: white;
+      font-size: 11px;
+      padding: 2px 8px;
+      border-radius: 10px;
+      font-weight: 500;
+    }
+    .deadline-soon {
+      background-color: #e74c3c;
+    }
+    .deadline-warning {
+      background-color: #f39c12;
+    }
+    .footer {
+      text-align: center;
+      font-size: 12px;
+      color: #999;
+      margin-top: 24px;
+      padding-top: 16px;
+      border-top: 1px solid #eee;
+    }
+    .empty-section {
+      font-size: 13px;
+      color: #999;
+      font-style: italic;
+      padding: 8px 0;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>Funding Opportunity Digest</h1>
+    <div class="date">{{ date }}</div>
+    <div class="count">{{ total_count }} new opportunit{{ 'y' if total_count == 1 else 'ies' }} this week</div>
+  </div>
+
+  <div class="content">
+
+    <!-- Section 1: Government Opportunities -->
+    <div class="section">
+      <div class="section-title">Government Opportunities</div>
+      {% if government_groups %}
+        {% for source, opps in government_groups.items() %}
+        <div class="source-group">
+          <div class="source-name">{{ source | replace('_', ' ') | upper }}</div>
+          {% for opp in opps %}
+          <div class="opportunity">
+            <div class="opp-title">
+              <a href="{{ opp.url }}">{{ opp.title }}</a>
+            </div>
+            {% if opp.summary %}
+            <div class="opp-summary">{{ opp.summary }}</div>
+            {% endif %}
+            <div class="opp-meta">
+              {% if opp.funding_amount %}
+              <span>💰 {{ opp.funding_amount }}</span>
+              {% endif %}
+              {% if opp.deadline %}
+              <span>📅 Deadline: {{ opp.deadline }}</span>
+              {% endif %}
+              {% if opp.posted_date %}
+              <span>📌 Posted: {{ opp.posted_date }}</span>
+              {% endif %}
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+        {% endfor %}
+      {% else %}
+        <div class="empty-section">No new government opportunities this week.</div>
+      {% endif %}
+    </div>
+
+    <!-- Section 2: Industry Opportunities -->
+    <div class="section">
+      <div class="section-title">Industry Opportunities</div>
+      {% if industry_groups %}
+        {% for source, opps in industry_groups.items() %}
+        <div class="source-group">
+          <div class="source-name">{{ source | replace('_', ' ') | title }}</div>
+          {% for opp in opps %}
+          <div class="opportunity">
+            <div class="opp-title">
+              <a href="{{ opp.url }}">{{ opp.title }}</a>
+            </div>
+            {% if opp.summary %}
+            <div class="opp-summary">{{ opp.summary }}</div>
+            {% endif %}
+            <div class="opp-meta">
+              {% if opp.funding_amount %}
+              <span>💰 {{ opp.funding_amount }}</span>
+              {% endif %}
+              {% if opp.deadline %}
+              <span>📅 Deadline: {{ opp.deadline }}</span>
+              {% endif %}
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+        {% endfor %}
+      {% else %}
+        <div class="empty-section">No new industry opportunities this week.</div>
+      {% endif %}
+    </div>
+
+    <!-- Section 3: Upcoming Deadlines -->
+    <div class="section">
+      <div class="section-title">Upcoming Deadlines (Next 30 Days)</div>
+      {% if upcoming_deadlines %}
+        {% for opp in upcoming_deadlines %}
+        <div class="opportunity">
+          <div class="opp-title">
+            <a href="{{ opp.url }}">{{ opp.title }}</a>
+            <span class="deadline-badge deadline-soon">{{ opp.deadline }}</span>
+          </div>
+          <div class="opp-meta">
+            <span>Source: {{ opp.source | replace('_', ' ') | title }}</span>
+            {% if opp.funding_amount %}
+            <span>💰 {{ opp.funding_amount }}</span>
+            {% endif %}
+          </div>
+        </div>
+        {% endfor %}
+      {% else %}
+        <div class="empty-section">No upcoming deadlines in the next 30 days.</div>
+      {% endif %}
+    </div>
+
+  </div>
+
+  <div class="footer">
+    <p>Funding Opportunity Search Agent &bull; University of Utah</p>
+    <p>Generated automatically. Reply to this email for questions.</p>
+  </div>
+</body>
+</html>

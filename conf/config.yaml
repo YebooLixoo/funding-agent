@@ -1,0 +1,17 @@
+defaults:
+  - sources/government
+  - sources/industry
+  - filter
+  - email
+  - _self_
+
+project:
+  name: funding-agent
+  db_path: data/state.db
+  log_dir: outputs/logs
+  cleanup_days: 90
+
+llm:
+  model: claude-haiku-4-5-20251001
+  max_tokens: 512
+  temperature: 0.1

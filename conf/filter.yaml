@@ -1,0 +1,50 @@
+filter:
+  # Primary AI keywords (must match at least 1)
+  primary_keywords:
+    - "artificial intelligence"
+    - "machine learning"
+    - "deep learning"
+    - "neural network"
+    - "computer vision"
+    - "natural language processing"
+    - "NLP"
+    - "autonomous"
+    - "reinforcement learning"
+    - "generative AI"
+    - "large language model"
+    - "LLM"
+    - "foundation model"
+
+  # Domain keywords (boost relevance score)
+  domain_keywords:
+    - "transportation"
+    - "vehicle"
+    - "traffic"
+    - "mobility"
+    - "energy"
+    - "grid"
+    - "electricity"
+    - "disaster"
+    - "emergency"
+    - "resilience"
+    - "network"
+    - "infrastructure"
+    - "smart city"
+    - "connected vehicle"
+    - "intelligent transportation"
+    - "urban"
+
+  # Exclusion patterns (skip these)
+  exclusions:
+    - "K-12"
+    - "undergraduate only"
+    - "postdoc only"
+    - "high school"
+    - "community college"
+
+  # Score thresholds
+  keyword_threshold: 0.3
+  llm_threshold: 0.5
+  # Borderline range for LLM review
+  llm_review_min: 0.3
+  llm_review_max: 0.6

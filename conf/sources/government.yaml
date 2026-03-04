@@ -1,0 +1,36 @@
+government:
+  sam_gov:
+    enabled: true
+    name: "SAM.gov"
+    base_url: "https://api.sam.gov/opportunities/v2/search"
+    # API key provided via SAM_GOV_API_KEY env var
+    rate_limit_per_day: 10
+    search_keywords:
+      - "artificial intelligence transportation"
+      - "machine learning transportation"
+      - "autonomous vehicles"
+      - "smart transportation"
+      - "AI infrastructure"
+
+  nsf:
+    enabled: true
+    name: "NSF"
+    api_url: "http://api.nsf.gov/services/v1/awards.json"
+    rss_url: "https://www.nsf.gov/rss/rss_www_funding.xml"
+    search_keywords:
+      - "artificial intelligence"
+      - "machine learning"
+      - "transportation"
+      - "autonomous"
+      - "deep learning"
+
+  grants_gov:
+    enabled: true
+    name: "Grants.gov"
+    base_url: "https://api.simpler.grants.gov/v1/opportunities/search"
+    # API key provided via GRANTS_GOV_API_KEY env var
+    rate_limit_per_minute: 60
+    search_keywords:
+      - "artificial intelligence AND transportation"
+      - "machine learning AND infrastructure"
+      - "autonomous vehicle"
