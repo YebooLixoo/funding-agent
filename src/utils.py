@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 from rich.logging import RichHandler
 
@@ -35,21 +36,24 @@ def setup_logging(name: str = "funding_agent", log_dir: str = "outputs/logs") ->
     return logger
 
 
-def utc_now() -> datetime:
-    """Current UTC time as timezone-aware datetime."""
-    return datetime.now(timezone.utc)
+MOUNTAIN_TZ = ZoneInfo("America/Denver")
 
 
-def yesterday_noon_utc() -> datetime:
-    """Yesterday at 12:00 PM UTC."""
-    now = utc_now()
+def now_mt() -> datetime:
+    """Current Mountain Time as timezone-aware datetime."""
+    return datetime.now(MOUNTAIN_TZ)
+
+
+def yesterday_noon_mt() -> datetime:
+    """Yesterday at 12:00 PM Mountain Time."""
+    now = now_mt()
     yesterday = now - timedelta(days=1)
     return yesterday.replace(hour=12, minute=0, second=0, microsecond=0)
 
 
-def today_noon_utc() -> datetime:
-    """Today at 12:00 PM UTC."""
-    now = utc_now()
+def today_noon_mt() -> datetime:
+    """Today at 12:00 PM Mountain Time."""
+    now = now_mt()
     return now.replace(hour=12, minute=0, second=0, microsecond=0)
 
 

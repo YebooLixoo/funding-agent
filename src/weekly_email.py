@@ -1,14 +1,16 @@
 """Stage 2: Weekly email pipeline.
 
-Runs every Thursday at 8:00 PM. Queries SQLite for pending opportunities,
+Runs every Thursday at 8:00 PM Mountain Time. Queries SQLite for pending opportunities,
 composes HTML digest, and sends via Gmail SMTP.
 
 Usage:
-    uv run python -m src.weekly_email
+    uv run python -m src.weekly_email           # Production: send to all recipients
+    uv run python -m src.weekly_email --test    # Test: send only to bo.yu@utah.edu
 """
 
 from __future__ import annotations
 
+import argparse
 import logging
 import sys
 from datetime import datetime
@@ -34,8 +36,13 @@ def load_config() -> DictConfig:
     return cfg
 
 
-def run_pipeline(cfg: DictConfig) -> None:
-    """Execute the weekly email pipeline."""
+def run_pipeline(cfg: DictConfig, test_mode: bool = False) -> None:
+    """Execute the weekly email pipeline.
+
+    Args:
+        cfg: Hydra configuration.
+        test_mode: If True, send only to test_recipient instead of full list.
+    """
     db = StateDB(cfg.project.db_path)
     email_cfg = cfg.get("email", {})
 
@@ -76,16 +83,24 @@ def run_pipeline(cfg: DictConfig) -> None:
 
     # Step 5: Send email
     total_count = len(pending)
-    subject = f"{email_cfg.get('subject_prefix', 'Funding Digest')}: {date_str} ({total_count} opportunit{'y' if total_count == 1 else 'ies'})"
-    recipients = list(email_cfg.get("recipients", ["bo.yu@utah.edu"]))
+    if test_mode:
+        recipients = [email_cfg.get("test_recipient", "bo.yu@utah.edu")]
+        subject = f"[TEST] {email_cfg.get('subject_prefix', 'Funding Digest')}: {date_str} ({total_count} opportunit{'y' if total_count == 1 else 'ies'})"
+        logger.info(f"TEST MODE: sending only to {recipients[0]}")
+    else:
+        recipients = list(email_cfg.get("recipients", ["bo.yu@utah.edu"]))
+        subject = f"{email_cfg.get('subject_prefix', 'Funding Digest')}: {date_str} ({total_count} opportunit{'y' if total_count == 1 else 'ies'})"
 
     success = emailer.send(recipients=recipients, subject=subject, html_body=html)
 
     if success:
-        # Step 6: Mark as emailed
-        composite_ids = [o["composite_id"] for o in pending]
-        db.mark_emailed(composite_ids)
-        logger.info(f"Marked {len(composite_ids)} opportunities as emailed")
+        # Step 6: Mark as emailed (only in production mode)
+        if not test_mode:
+            composite_ids = [o["composite_id"] for o in pending]
+            db.mark_emailed(composite_ids)
+            logger.info(f"Marked {len(composite_ids)} opportunities as emailed")
+        else:
+            logger.info("TEST MODE: opportunities NOT marked as emailed")
 
         # Archive digest
         emailer.archive_digest(html)
@@ -98,13 +113,22 @@ def run_pipeline(cfg: DictConfig) -> None:
 
 
 def main() -> None:
+    parser = argparse.ArgumentParser(description="Weekly funding digest email")
+    parser.add_argument(
+        "--test", action="store_true",
+        help="Test mode: send only to bo.yu@utah.edu, don't mark as emailed",
+    )
+    args = parser.parse_args()
+
     load_dotenv()
     setup_logging("weekly_email")
     cfg = load_config()
-    logger.info("Starting weekly email pipeline")
+
+    mode_str = "TEST" if args.test else "PRODUCTION"
+    logger.info(f"Starting weekly email pipeline ({mode_str})")
 
     try:
-        run_pipeline(cfg)
+        run_pipeline(cfg, test_mode=args.test)
         logger.info("Weekly email completed successfully")
     except Exception:
         logger.exception("Weekly email failed")

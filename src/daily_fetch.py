@@ -1,6 +1,6 @@
 """Stage 1: Daily fetch pipeline.
 
-Runs daily at 12:00 PM noon. Fetches from all sources, deduplicates,
+Runs daily at 12:00 PM noon Mountain Time. Fetches from all sources, deduplicates,
 filters by relevance, summarizes, and stores in SQLite.
 
 Usage:
@@ -12,7 +12,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import sys
-from datetime import datetime, timezone
+from datetime import datetime
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -25,7 +25,7 @@ from src.filter.llm_filter import LLMFilter
 from src.models import Opportunity
 from src.state import StateDB
 from src.summarizer import Summarizer
-from src.utils import setup_logging, today_noon_utc, yesterday_noon_utc
+from src.utils import now_mt, setup_logging, yesterday_noon_mt
 
 logger = logging.getLogger(__name__)
 
@@ -108,13 +108,13 @@ async def run_pipeline(cfg: DictConfig) -> None:
     """Execute the full daily fetch pipeline."""
     db = StateDB(cfg.project.db_path)
 
-    # Step 1: Determine fetch window
+    # Step 1: Determine fetch window (Mountain Time)
     last_end = db.get_last_successful_fetch_end()
     if last_end is not None:
         window_start = last_end
     else:
-        window_start = yesterday_noon_utc()
-    window_end = datetime.now(timezone.utc)
+        window_start = yesterday_noon_mt()
+    window_end = now_mt()
 
     logger.info(f"Fetch window: {window_start.isoformat()} → {window_end.isoformat()}")
 

@@ -9,13 +9,13 @@ Built for the [University of Utah](https://www.utah.edu/) research group.
 The system runs as a **two-stage pipeline** scheduled via macOS LaunchAgents:
 
 ```
-STAGE 1: Daily Fetch (every day at 12:00 PM)
+STAGE 1: Daily Fetch (every day at 12:00 PM MT)
 ┌──────────────┐    ┌──────────────┐    ┌──────────────┐    ┌──────────────┐
 │   Fetchers   │───>│  Deduplicate │───>│   Filter     │───>│  Summarize   │
 │  (parallel)  │    │  (SQLite)    │    │ (keyword+LLM)│    │  & Store DB  │
 └──────────────┘    └──────────────┘    └──────────────┘    └──────────────┘
 
-STAGE 2: Weekly Email (every Thursday at 8:00 PM)
+STAGE 2: Weekly Email (every Thursday at 8:00 PM MT)
 ┌──────────────┐    ┌──────────────┐    ┌──────────────┐
 │  Query DB    │───>│  Compose     │───>│  Send Email  │
 │ (last 7 days)│    │  HTML Digest │    │  (Gmail SMTP)│
@@ -161,8 +161,8 @@ email:
 ```
 
 This installs two macOS LaunchAgents:
-- **Daily fetch** at 12:00 PM noon (`com.boyu.funding-agent.daily`)
-- **Weekly email** every Thursday at 8:00 PM (`com.boyu.funding-agent.weekly`)
+- **Daily fetch** at 12:00 PM noon Mountain Time (`com.boyu.funding-agent.daily`)
+- **Weekly email** every Thursday at 8:00 PM Mountain Time (`com.boyu.funding-agent.weekly`)
 
 Verify they are loaded:
 

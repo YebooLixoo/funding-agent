@@ -1,11 +1,20 @@
 #!/bin/bash
-# Manual trigger: run the weekly email pipeline immediately.
+# Manual trigger: run the weekly email pipeline in TEST mode.
+# Sends only to bo.yu@utah.edu and does NOT mark opportunities as emailed.
+# Use --prod to send to all recipients (same as scheduled run).
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 
 cd "$PROJECT_DIR"
-echo "Running weekly email pipeline..."
-uv run python -m src.weekly_email
+
+if [ "${1:-}" = "--prod" ]; then
+    echo "Running weekly email pipeline (PRODUCTION - all recipients)..."
+    uv run python -m src.weekly_email
+else
+    echo "Running weekly email pipeline (TEST - bo.yu@utah.edu only)..."
+    uv run python -m src.weekly_email --test
+fi
+
 echo "Done."
