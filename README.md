@@ -9,10 +9,10 @@ Built for the [University of Utah](https://www.utah.edu/) research group.
 The system runs as a **two-stage pipeline** scheduled via macOS LaunchAgents:
 
 ```
-STAGE 1: Daily Fetch (every day at 12:00 PM MT)
+STAGE 1: Weekly Fetch (every Thursday at 12:00 PM MT)
 ┌──────────────┐    ┌──────────────┐    ┌──────────────┐    ┌──────────────┐
-│   Fetchers   │───>│  Deduplicate │───>│   Filter     │───>│  Summarize   │
-│  (parallel)  │    │  (SQLite)    │    │ (keyword+LLM)│    │  & Store DB  │
+│   Fetchers   │───>│  LLM Validate│───>│   Filter     │───>│  Summarize   │
+│  (parallel)  │    │  (GPT-5.2)   │    │ (keyword+LLM)│    │  & Store DB  │
 └──────────────┘    └──────────────┘    └──────────────┘    └──────────────┘
 
 STAGE 2: Weekly Email (every Thursday at 8:00 PM MT)
@@ -24,10 +24,10 @@ STAGE 2: Weekly Email (every Thursday at 8:00 PM MT)
 
 **Why two stages?**
 
-- **Rate limits** — Grants.gov and NSF have rate limits; daily fetching spreads the load.
+- **Rate limits** — Grants.gov and NSF have rate limits; separating fetch from email avoids timeouts.
 - **Punctual email** — Thursday 8 PM email compiles pre-stored data instantly.
-- **Resilience** — If one day's fetch fails, the next day auto-recovers the missed window.
-- **Freshness** — Opportunities are captured within 24 hours of posting.
+- **Resilience** — If a fetch fails, the next week auto-recovers the missed window.
+- **Quality gate** — GPT-5.2 validates every opportunity before storage, ensuring only real, currently-open calls are included.
 
 ## Funding Sources
 
@@ -35,31 +35,42 @@ STAGE 2: Weekly Email (every Thursday at 8:00 PM MT)
 
 | Source | Method | Notes |
 |--------|--------|-------|
-| **NSF** | REST API + RSS feed | Awards API for keyword search; RSS for new funding announcements |
-| **Grants.gov** | REST API (Simpler API v1) | Federal grant opportunities aggregator; API key required |
+| **NSF** | RSS feed | New funding announcements from `nsf.gov/rss/rss_www_funding.xml`; LLM-validated |
+| **Grants.gov** | REST API (Simpler API v1) | Federal grant aggregator; keyword search with client-side date filtering; API key required |
+| **DOE** | Web scraping | `energy.gov/funding-financing` (currently blocked by 403; see Manual Review) |
+| **USDOT** | Web scraping | `transportation.gov/grants` (currently blocked by 403; see Manual Review) |
 
-### Industry (Web Scraping)
+### Industry (Web Scraping + LLM Validation)
 
 | Company | Program | Relevance |
 |---------|---------|-----------|
-| Amazon | Research Awards | High |
-| Google | Research Scholar Program | High |
 | NVIDIA | Academic Hardware Grant | Very High |
-| Microsoft | Azure Research Credits | Medium |
-| Meta | Llama Impact Grants | Medium |
-| Apple | Scholars in AI/ML | Medium |
+| Google | Research Scholar Program | High |
 | Qualcomm | Innovation Fellowship | High |
-| Samsung | Global Research Outreach | Medium |
-| Toyota | Research Institute | Very High |
-| Ford | University Research | Very High |
-| Bosch | University Partnerships | High |
+| Amazon | Research Awards | High |
+| Microsoft | Research Academic Programs | Medium |
 | Cisco | Research Funding | Medium |
 | IBM | Faculty Awards | Medium |
+| Samsung | Global Research Outreach | Medium |
 | Adobe | Data Science Awards | Low |
-| DOE | Funding Opportunities | High |
-| USDOT | Grant Programs | Very High |
+
+All industry pages are scraped and validated by GPT-5.2 via the `OpportunityValidator`. Only opportunities that are **currently accepting applications** with an explicit deadline or rolling status are included.
 
 See [`docs/funding_sources.md`](docs/funding_sources.md) for full URLs and API details.
+
+## LLM Validation Gate
+
+Every opportunity passes through a GPT-5.2 validation gate (`OpportunityValidator`) before being accepted:
+
+**For industry web pages:**
+- Page content is sent to GPT-5.2 which identifies only real, currently-open funding opportunities
+- Each extracted opportunity must have `confidence >= 0.6`
+- Must have an explicit future deadline (`deadline_status: "explicit_date"`) or be explicitly rolling (`deadline_status: "rolling"`)
+- Past deadlines and generic program descriptions are automatically rejected
+
+**For government API results:**
+- NSF RSS items are individually validated by GPT-5.2
+- Grants.gov results are filtered by keyword search, date window, and deadline
 
 ## Relevance Filtering
 
@@ -77,20 +88,21 @@ funding-agent/
 ├── conf/                          # Hydra configuration
 │   ├── config.yaml                # Main config (LLM model, DB path)
 │   ├── sources/                   # Data source configs
-│   │   ├── government.yaml        # NSF, Grants.gov API settings
-│   │   └── industry.yaml          # 16 industry source URLs
+│   │   ├── government.yaml        # NSF, Grants.gov API + DOE/USDOT web sources
+│   │   └── industry.yaml          # 9 industry source URLs
 │   ├── filter.yaml                # Keywords & relevance thresholds
 │   └── email.yaml                 # SMTP settings & recipient list
 ├── src/
-│   ├── daily_fetch.py             # Stage 1: Daily fetch pipeline
+│   ├── daily_fetch.py             # Stage 1: Weekly fetch pipeline (7-day window)
 │   ├── weekly_email.py            # Stage 2: Weekly email pipeline
-│   ├── models.py                  # Opportunity dataclass
+│   ├── models.py                  # Opportunity dataclass (frozen)
 │   ├── state.py                   # SQLite state management
 │   ├── fetcher/                   # Data retrieval modules
 │   │   ├── base.py                # BaseFetcher ABC with retry
-│   │   ├── nsf.py                 # NSF API + RSS fetcher
-│   │   ├── grants_gov.py          # Grants.gov API fetcher
-│   │   └── web_scraper.py         # Generic industry page scraper
+│   │   ├── nsf.py                 # NSF RSS fetcher + LLM validation
+│   │   ├── grants_gov.py          # Grants.gov Simpler API fetcher
+│   │   ├── web_scraper.py         # Industry/government page scraper
+│   │   └── opportunity_validator.py  # GPT-5.2 LLM validation gate
 │   ├── filter/                    # Relevance filtering
 │   │   ├── keyword_filter.py      # Fast keyword matching
 │   │   └── llm_filter.py          # GPT-5.2 for borderline cases
@@ -103,7 +115,7 @@ funding-agent/
 │   └── state.db                   # SQLite database (gitignored)
 ├── launchd/                       # macOS LaunchAgent plists
 ├── scripts/                       # Install/uninstall & manual triggers
-├── tests/                         # Unit tests
+├── tests/                         # Unit tests (42 tests)
 └── outputs/
     ├── logs/                      # Execution logs
     └── digests/                   # Archived HTML digests
@@ -161,7 +173,7 @@ email:
 ```
 
 This installs two macOS LaunchAgents:
-- **Daily fetch** at 12:00 PM noon Mountain Time (`com.boyu.funding-agent.daily`)
+- **Weekly fetch** every Thursday at 12:00 PM noon Mountain Time (`com.boyu.funding-agent.daily`)
 - **Weekly email** every Thursday at 8:00 PM Mountain Time (`com.boyu.funding-agent.weekly`)
 
 Verify they are loaded:
@@ -180,7 +192,7 @@ To uninstall:
 
 ### Manual Triggers
 
-Run the daily fetch immediately:
+Run the weekly fetch immediately:
 
 ```bash
 ./scripts/fetch_now.sh
@@ -224,8 +236,8 @@ open outputs/digests/        # Open in Finder
 All configuration is managed through YAML files in `conf/`:
 
 - **`config.yaml`** — LLM model, database path, log directory
-- **`sources/government.yaml`** — API endpoints and search keywords for NSF, Grants.gov
-- **`sources/industry.yaml`** — Industry source URLs and relevance ratings
+- **`sources/government.yaml`** — NSF RSS, Grants.gov API settings, DOE/USDOT web sources
+- **`sources/industry.yaml`** — 9 industry source URLs and relevance ratings
 - **`filter.yaml`** — Primary/domain keywords, exclusions, score thresholds
 - **`email.yaml`** — SMTP settings, recipient list, digest options
 
@@ -257,17 +269,15 @@ The following funding sources **cannot be monitored automatically** due to scrap
 |--------|-----|--------|
 | **SAM.gov** | https://sam.gov/ | Strict Terms of Service prohibit automated data collection; potential legal risk. Use the web portal to search for federal contract and grant opportunities manually. |
 
-### Industry — Blocked by Anti-Scraping Protections
+### Industry/Government — Blocked by Anti-Scraping Protections
 
-These sites actively block automated access via 403 Forbidden responses, SSL restrictions, or bot detection:
+These sites actively block automated access via 403 Forbidden responses, SSL restrictions, or bot detection. DOE and USDOT are configured as government web sources but currently fail with 403:
 
 | Source | URL | Block Type | What to Look For |
 |--------|-----|-----------|------------------|
 | **USDOT** | https://www.transportation.gov/grants | 403 Forbidden | Federal transportation grants — **very high relevance** to AI + transportation research |
 | **DOE** | https://www.energy.gov/funding-financing | 403 Forbidden | Energy and infrastructure funding — relevant to smart grid and energy AI research |
 | **Adobe** | https://research.adobe.com/data-science-research-awards/ | SSL certificate block | Data Science Research Awards for faculty |
-| **Meta** | https://www.llama.com/llama-ai-innovation/ | 400 Bad Request | Llama Impact Grants for AI research |
-| **Ford** | https://research.ford.com/ | Connection reset | University research partnerships — **very high relevance** to autonomous vehicle research |
 
 ### Aggregator Sites
 
@@ -278,4 +288,4 @@ These are useful search engines for discovering additional opportunities but req
 | **GrantForward** | https://www.grantforward.com/ | University grant search engine; may be available through institutional login |
 | **GrantedAI** | https://grantedai.com/ | AI-specific grant aggregator |
 
-> **Tip**: Consider setting a calendar reminder every Monday to check the high-relevance sources above (SAM.gov, USDOT, DOE, Ford) for new opportunities.
+> **Tip**: Consider setting a calendar reminder every Thursday to check the high-relevance sources above (SAM.gov, USDOT, DOE) for new opportunities.
