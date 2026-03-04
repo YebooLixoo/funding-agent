@@ -1,17 +1,4 @@
 government:
-  sam_gov:
-    enabled: true
-    name: "SAM.gov"
-    base_url: "https://api.sam.gov/opportunities/v2/search"
-    # API key provided via SAM_GOV_API_KEY env var
-    rate_limit_per_day: 10
-    search_keywords:
-      - "artificial intelligence transportation"
-      - "machine learning transportation"
-      - "autonomous vehicles"
-      - "smart transportation"
-      - "AI infrastructure"
-
   nsf:
     enabled: true
     name: "NSF"

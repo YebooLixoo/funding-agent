@@ -1,4 +1,4 @@
-"""Claude Haiku LLM-based relevance filter for borderline cases."""
+"""OpenAI GPT-based relevance filter for borderline cases."""
 
 from __future__ import annotations
 
@@ -28,27 +28,26 @@ REASON: <one sentence>"""
 
 
 class LLMFilter:
-    """Use Claude Haiku to evaluate borderline opportunities.
+    """Use OpenAI GPT to evaluate borderline opportunities.
 
     Only invoked for opportunities with keyword scores between 0.3-0.6.
-    Cost: ~$0.01 per call.
     """
 
-    def __init__(self, model: str = "claude-haiku-4-5-20251001") -> None:
+    def __init__(self, model: str = "gpt-5.2") -> None:
         self.model = model
         self._client = None
 
     def _get_client(self):
         if self._client is None:
             try:
-                import anthropic
-                self._client = anthropic.Anthropic()
+                from openai import OpenAI
+                self._client = OpenAI()
             except Exception:
-                logger.warning("Anthropic client not available, LLM filter disabled")
+                logger.warning("OpenAI client not available, LLM filter disabled")
         return self._client
 
     async def evaluate(self, opp: Opportunity) -> tuple[float, str]:
-        """Evaluate a single opportunity with Claude Haiku.
+        """Evaluate a single opportunity with GPT.
 
         Returns:
             Tuple of (score, reason).
@@ -58,23 +57,23 @@ class LLMFilter:
             return opp.relevance_score, "LLM unavailable, using keyword score"
 
         try:
-            message = client.messages.create(
+            response = client.chat.completions.create(
                 model=self.model,
-                max_tokens=150,
+                max_completion_tokens=150,
                 temperature=0.1,
-                system=_SYSTEM_PROMPT,
                 messages=[
+                    {"role": "system", "content": _SYSTEM_PROMPT},
                     {
                         "role": "user",
                         "content": _USER_TEMPLATE.format(
                             title=opp.title,
                             description=opp.description[:1500],
                         ),
-                    }
+                    },
                 ],
             )
 
-            response_text = message.content[0].text
+            response_text = response.choices[0].message.content
             return self._parse_response(response_text)
 
         except Exception:

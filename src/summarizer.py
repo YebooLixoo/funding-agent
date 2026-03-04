@@ -1,4 +1,4 @@
-"""LLM-powered opportunity summarization."""
+"""LLM-powered opportunity summarization using OpenAI GPT."""
 
 from __future__ import annotations
 
@@ -28,19 +28,19 @@ Respond with ONLY the summary, no preamble."""
 
 
 class Summarizer:
-    """Generate concise summaries of funding opportunities using Claude Haiku."""
+    """Generate concise summaries of funding opportunities using OpenAI GPT."""
 
-    def __init__(self, model: str = "claude-haiku-4-5-20251001") -> None:
+    def __init__(self, model: str = "gpt-5.2") -> None:
         self.model = model
         self._client = None
 
     def _get_client(self):
         if self._client is None:
             try:
-                import anthropic
-                self._client = anthropic.Anthropic()
+                from openai import OpenAI
+                self._client = OpenAI()
             except Exception:
-                logger.warning("Anthropic client not available, using template summaries")
+                logger.warning("OpenAI client not available, using template summaries")
         return self._client
 
     async def summarize(self, opp: Opportunity) -> str:
@@ -53,12 +53,12 @@ class Summarizer:
             return self._template_summary(opp)
 
         try:
-            message = client.messages.create(
+            response = client.chat.completions.create(
                 model=self.model,
-                max_tokens=200,
+                max_completion_tokens=200,
                 temperature=0.2,
-                system=_SYSTEM_PROMPT,
                 messages=[
+                    {"role": "system", "content": _SYSTEM_PROMPT},
                     {
                         "role": "user",
                         "content": _USER_TEMPLATE.format(
@@ -67,10 +67,10 @@ class Summarizer:
                             deadline=format_date(opp.deadline),
                             amount=opp.funding_amount or "Not specified",
                         ),
-                    }
+                    },
                 ],
             )
-            return message.content[0].text.strip()
+            return response.choices[0].message.content.strip()
 
         except Exception:
             logger.exception(f"Summarization failed for: {opp.title[:60]}")

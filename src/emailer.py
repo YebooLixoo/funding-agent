@@ -89,28 +89,31 @@ class Emailer:
 
     def send(
         self,
-        recipient: str,
+        recipients: list[str] | str,
         subject: str,
         html_body: str,
     ) -> bool:
-        """Send an HTML email via Gmail SMTP.
+        """Send an HTML email via Gmail SMTP to one or more recipients.
 
         Args:
-            recipient: Email address of the recipient.
+            recipients: Email address(es) of the recipient(s).
             subject: Email subject line.
             html_body: HTML content of the email.
 
         Returns:
-            True if sent successfully.
+            True if sent successfully to all recipients.
         """
         if not self.sender or not self.password:
             logger.error("Gmail credentials not configured (GMAIL_ADDRESS, GMAIL_APP_PASSWORD)")
             return False
 
+        if isinstance(recipients, str):
+            recipients = [recipients]
+
         msg = MIMEMultipart("alternative")
         msg["Subject"] = subject
         msg["From"] = self.sender
-        msg["To"] = recipient
+        msg["To"] = ", ".join(recipients)
 
         # Plain text fallback
         plain = "This email requires HTML to view. Please enable HTML in your email client."
@@ -122,13 +125,13 @@ class Emailer:
                 if self.use_tls:
                     server.starttls()
                 server.login(self.sender, self.password)
-                server.sendmail(self.sender, recipient, msg.as_string())
+                server.sendmail(self.sender, recipients, msg.as_string())
 
-            logger.info(f"Email sent to {recipient}: {subject}")
+            logger.info(f"Email sent to {', '.join(recipients)}: {subject}")
             return True
 
         except Exception:
-            logger.exception(f"Failed to send email to {recipient}")
+            logger.exception(f"Failed to send email to {', '.join(recipients)}")
             return False
 
     def archive_digest(self, html_body: str, date_str: Optional[str] = None) -> Path:

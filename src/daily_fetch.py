@@ -46,11 +46,6 @@ async def fetch_government(cfg: DictConfig, window_start: datetime, window_end: 
 
     gov_cfg = cfg.get("government", {})
 
-    # SAM.gov
-    if gov_cfg.get("sam_gov", {}).get("enabled", False):
-        fetcher = get_fetcher("sam_gov")
-        tasks.append(fetcher.fetch(window_start, window_end, list(gov_cfg.sam_gov.search_keywords)))
-
     # NSF
     if gov_cfg.get("nsf", {}).get("enabled", False):
         fetcher = get_fetcher("nsf")
@@ -155,7 +150,7 @@ async def run_pipeline(cfg: DictConfig) -> None:
 
     # LLM filter for borderline cases
     if borderline:
-        llm_filter = LLMFilter(model=cfg.get("llm", {}).get("model", "claude-haiku-4-5-20251001"))
+        llm_filter = LLMFilter(model=cfg.get("llm", {}).get("model", "gpt-5.2"))
         llm_accepted = await llm_filter.filter_borderline(
             borderline, threshold=filter_cfg.get("llm_threshold", 0.5)
         )
@@ -170,7 +165,7 @@ async def run_pipeline(cfg: DictConfig) -> None:
         return
 
     # Step 5: Summarize
-    summarizer = Summarizer(model=cfg.get("llm", {}).get("model", "claude-haiku-4-5-20251001"))
+    summarizer = Summarizer(model=cfg.get("llm", {}).get("model", "gpt-5.2"))
     summarized = await summarizer.summarize_batch(accepted)
 
     # Step 6: Store in SQLite

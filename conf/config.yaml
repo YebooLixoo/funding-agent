@@ -12,6 +12,6 @@ project:
   cleanup_days: 90
 
 llm:
-  model: claude-haiku-4-5-20251001
+  model: gpt-5.2
   max_tokens: 512
   temperature: 0.1

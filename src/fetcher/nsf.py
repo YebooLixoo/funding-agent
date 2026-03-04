@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 import feedparser
@@ -109,7 +109,7 @@ class NSFFetcher(BaseFetcher):
         for entry in feed.entries:
             published = None
             if hasattr(entry, "published_parsed") and entry.published_parsed:
-                published = datetime(*entry.published_parsed[:6])
+                published = datetime(*entry.published_parsed[:6], tzinfo=timezone.utc)
 
             # Filter by time window
             if published and (published < window_start or published > window_end):

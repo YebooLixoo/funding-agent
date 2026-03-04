@@ -77,9 +77,9 @@ def run_pipeline(cfg: DictConfig) -> None:
     # Step 5: Send email
     total_count = len(pending)
     subject = f"{email_cfg.get('subject_prefix', 'Funding Digest')}: {date_str} ({total_count} opportunit{'y' if total_count == 1 else 'ies'})"
-    recipient = email_cfg.get("recipient", "bo.yu@utah.edu")
+    recipients = list(email_cfg.get("recipients", ["bo.yu@utah.edu"]))
 
-    success = emailer.send(recipient=recipient, subject=subject, html_body=html)
+    success = emailer.send(recipients=recipients, subject=subject, html_body=html)
 
     if success:
         # Step 6: Mark as emailed

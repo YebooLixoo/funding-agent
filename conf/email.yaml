@@ -3,7 +3,11 @@ email:
   smtp_port: 587
   use_tls: true
   # Credentials via GMAIL_ADDRESS and GMAIL_APP_PASSWORD env vars
-  recipient: "bo.yu@utah.edu"
+  recipients:
+    - "bo.yu@utah.edu"
+    - "chenxi.liu@utah.edu"
+    - "fred.yang@utah.edu"
+    - "xuewen.luo@utah.edu"
   subject_prefix: "Funding Digest"
   deadline_lookahead_days: 30
   digest_archive_dir: "outputs/digests"

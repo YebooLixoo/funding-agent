@@ -77,13 +77,19 @@ class GrantsGovFetcher(BaseFetcher):
                     "start_date": window_start.strftime("%Y-%m-%d"),
                     "end_date": window_end.strftime("%Y-%m-%d"),
                 },
-                "opportunity_statuses": ["posted", "forecasted"],
+                "opportunity_status": {
+                    "one_of": ["posted", "forecasted"],
+                },
             },
             "pagination": {
                 "page_offset": page,
                 "page_size": 25,
-                "sort_by": "post_date",
-                "sort_order": "descending",
+                "sort_order": [
+                    {
+                        "order_by": "post_date",
+                        "sort_direction": "descending",
+                    }
+                ],
             },
         }
 

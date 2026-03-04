@@ -29,14 +29,12 @@ def get_fetcher(name: str, **kwargs) -> BaseFetcher:
 # Register all fetchers on import
 from src.fetcher.grants_gov import GrantsGovFetcher  # noqa: E402, F401
 from src.fetcher.nsf import NSFFetcher  # noqa: E402, F401
-from src.fetcher.sam_gov import SAMGovFetcher  # noqa: E402, F401
 from src.fetcher.web_scraper import WebScraperFetcher  # noqa: E402, F401
 
 __all__ = [
     "FETCHER_REGISTRY",
     "register_fetcher",
     "get_fetcher",
-    "SAMGovFetcher",
     "NSFFetcher",
     "GrantsGovFetcher",
     "WebScraperFetcher",
