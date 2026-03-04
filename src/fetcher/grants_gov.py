@@ -10,7 +10,7 @@ from typing import Optional
 from src.fetcher import register_fetcher
 from src.fetcher.base import BaseFetcher
 from src.models import Opportunity
-from src.utils import parse_date
+from src.utils import format_date_iso, parse_date
 
 logger = logging.getLogger(__name__)
 
@@ -23,7 +23,10 @@ class GrantsGovFetcher(BaseFetcher):
 
     Rate limit: 60 requests/minute.
     Uses POST with JSON body for search.
-    Validates deadlines: skips opportunities with past deadlines.
+
+    Note: The API nests post_date and close_date inside the `summary` object.
+    Pagination metadata may be empty, so we fetch up to 4 pages and filter
+    dates client-side.
     """
 
     source_name = "grants_gov"
@@ -52,9 +55,12 @@ class GrantsGovFetcher(BaseFetcher):
         results: list[Opportunity] = []
         seen_ids: set[str] = set()
 
+        window_start_str = format_date_iso(window_start)
+        window_end_str = format_date_iso(window_end)
+
         for kw in keywords:
             try:
-                opps = await self._search(kw, window_start, window_end)
+                opps = await self._search(kw, window_start_str, window_end_str)
                 for opp in opps:
                     if opp.source_id not in seen_ids:
                         seen_ids.add(opp.source_id)
@@ -66,7 +72,7 @@ class GrantsGovFetcher(BaseFetcher):
         return results
 
     async def _search(
-        self, query: str, window_start: datetime, window_end: datetime, page: int = 1
+        self, query: str, window_start: str, window_end: str, page: int = 1
     ) -> list[Opportunity]:
         headers = {
             "X-Api-Key": self.api_key,
@@ -76,10 +82,6 @@ class GrantsGovFetcher(BaseFetcher):
         body = {
             "query": query,
             "filters": {
-                "post_date": {
-                    "start_date": window_start.strftime("%Y-%m-%d"),
-                    "end_date": window_end.strftime("%Y-%m-%d"),
-                },
                 "opportunity_status": {
                     "one_of": ["posted", "forecasted"],
                 },
@@ -101,33 +103,62 @@ class GrantsGovFetcher(BaseFetcher):
 
         now = datetime.now(timezone.utc)
         opportunities = []
+        found_old = False
+
         for item in data.get("data", []):
-            # Validate deadline: skip past deadlines
-            close_date = parse_date(item.get("close_date", ""))
+            summary = item.get("summary", {}) if isinstance(item.get("summary"), dict) else {}
+
+            # Extract dates from summary (API nests them there)
+            post_date = parse_date(summary.get("post_date") or "")
+            close_date = parse_date(summary.get("close_date") or "")
+
+            # Client-side date window filter on post_date
+            if post_date:
+                post_str = post_date.strftime("%Y-%m-%d")
+                if post_str < window_start:
+                    found_old = True
+                    continue
+                if post_str > window_end:
+                    continue
+
+            # Skip past deadlines
             if close_date and close_date < now:
                 logger.debug(
                     f"Grants.gov: skipping past deadline: {item.get('opportunity_title', '')[:60]}"
                 )
                 continue
 
+            # Extract funding amount from summary
+            funding = summary.get("estimated_total_program_funding")
+            if funding:
+                funding = f"${funding:,.0f}" if isinstance(funding, (int, float)) else str(funding)
+
+            # Clean HTML from description
+            desc_raw = summary.get("summary_description", "")
+            if desc_raw:
+                # Strip HTML tags for clean text
+                import re
+                desc = re.sub(r"<[^>]+>", " ", desc_raw)
+                desc = re.sub(r"\s+", " ", desc).strip()
+            else:
+                desc = ""
+
             opp = Opportunity(
                 source=self.source_name,
                 source_id=str(item.get("opportunity_id", "")),
                 title=item.get("opportunity_title", ""),
-                description=item.get("summary", {}).get("summary_description", "")
-                    if isinstance(item.get("summary"), dict) else "",
+                description=desc[:2000],
                 url=f"https://simpler.grants.gov/opportunity/{item.get('opportunity_id', '')}",
                 source_type=self.source_type,
                 deadline=close_date,
-                posted_date=parse_date(item.get("post_date", "")),
-                funding_amount=item.get("estimated_total_program_funding"),
+                posted_date=post_date,
+                funding_amount=funding,
             )
             opportunities.append(opp)
 
-        # Fetch next pages if available
-        pagination = data.get("pagination", {})
-        total_pages = pagination.get("total_pages", 1)
-        if page < total_pages and page < 4:  # Max 4 pages
+        # Fetch next pages if we haven't hit old results and got a full page
+        items_count = len(data.get("data", []))
+        if items_count >= 25 and not found_old and page < 4:
             more = await self._search(query, window_start, window_end, page + 1)
             opportunities.extend(more)
 
