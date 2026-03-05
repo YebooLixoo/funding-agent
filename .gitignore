@@ -24,3 +24,7 @@ outputs/
 .idea/
 .vscode/
 *.swp
+
+# OS files
+.DS_Store
+.Rhistory
