@@ -14,10 +14,10 @@ def setup_logging(name: str = "funding_agent", log_dir: str = "outputs/logs") ->
     """Configure logging with Rich handler and file output.
 
     Configures the 'src' parent logger so all src.* module loggers
-    (e.g. src.daily_fetch, src.fetcher.nsf) inherit the handlers.
+    (e.g. src.weekly_fetch, src.fetcher.nsf) inherit the handlers.
 
     Args:
-        name: Base name for the log file (e.g. 'daily_fetch').
+        name: Base name for the log file (e.g. 'weekly_fetch').
         log_dir: Directory for log files.
 
     Returns:

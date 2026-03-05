@@ -5,7 +5,7 @@ using a 7-day window (last Thursday noon -> this Thursday noon), deduplicates,
 filters by relevance, summarizes, and stores in SQLite.
 
 Usage:
-    uv run python -m src.daily_fetch
+    uv run python -m src.weekly_fetch
 """
 
 from __future__ import annotations
@@ -166,6 +166,8 @@ async def run_pipeline(cfg: DictConfig) -> None:
         primary_keywords=list(filter_cfg.get("primary_keywords", [])),
         domain_keywords=list(filter_cfg.get("domain_keywords", [])),
         exclusions=list(filter_cfg.get("exclusions", [])),
+        career_keywords=list(filter_cfg.get("career_keywords", [])),
+        faculty_keywords=list(filter_cfg.get("faculty_keywords", [])),
         keyword_threshold=filter_cfg.get("keyword_threshold", 0.3),
     ))
 
@@ -212,7 +214,7 @@ async def run_pipeline(cfg: DictConfig) -> None:
 
 def main() -> None:
     load_dotenv()
-    setup_logging("daily_fetch")
+    setup_logging("weekly_fetch")
     cfg = load_config()
     logger.info("Starting weekly fetch pipeline")
 

@@ -10,13 +10,21 @@ from src.models import Opportunity
 
 logger = logging.getLogger(__name__)
 
-_SYSTEM_PROMPT = """You are a research funding relevance evaluator for a Computer Science professor.
-The professor focuses on:
-- AI/ML applied to transportation, autonomous vehicles, smart infrastructure
-- Deep learning, computer vision, NLP for transportation systems
-- Energy grid optimization, disaster resilience, smart cities
+_SYSTEM_PROMPT = """You are a research funding relevance evaluator for an assistant professor.
 
-Evaluate whether the following funding opportunity is relevant to this professor's research."""
+Profile:
+- Position: Assistant professor in Civil & Environmental Engineering (transportation engineering focus), with a CS PhD
+- Core research: Autonomous vehicles, V2X (vehicle-to-everything), smart infrastructure, connected vehicles, transportation networks, network resilience, network science
+- Broad interests: Any civil engineering area empowered by AI, general AI/ML, data science, operations research, routing, statistics
+- Career stage: Young faculty — eligible for early career awards (NSF CAREER, DOE Early Career, DARPA YFA, ONR YIP, etc.)
+
+Evaluate whether the following funding opportunity is relevant. Consider ALL of the following as relevant:
+1. AI/ML applied to transportation, civil engineering, or infrastructure
+2. Pure AI/ML or data science research grants
+3. Civil engineering, structural engineering, environmental engineering, water resources, hazards/resilience
+4. Network science, optimization, operations research
+5. Early career awards or young investigator programs for faculty
+6. Smart cities, connected vehicles, autonomous systems"""
 
 _USER_TEMPLATE = """Title: {title}
 Description: {description}

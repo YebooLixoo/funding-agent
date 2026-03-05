@@ -9,6 +9,10 @@ government:
       - "transportation"
       - "autonomous"
       - "deep learning"
+      - "civil engineering"
+      - "infrastructure"
+      - "early career"
+      - "CAREER"
 
   grants_gov:
     enabled: true
@@ -23,6 +27,22 @@ government:
       - "autonomous vehicles"
       - "deep learning"
       - "smart infrastructure"
+      - "civil engineering"
+      - "infrastructure resilience"
+      - "structural engineering"
+      - "environmental engineering"
+      - "water resources"
+      - "construction"
+      - "disaster"
+      - "evacuation"
+      - "data science"
+      - "operations research"
+      - "early career"
+      - "young investigator"
+      - "faculty research"
+      - "self-driving"
+      - "connected vehicle"
+      - "V2X"
 
   # Government web pages (scraped like industry but categorized as government)
   web_sources:
@@ -35,3 +55,28 @@ government:
       label: "USDOT Grant Programs"
       url: "https://www.transportation.gov/grants"
       relevance: very_high
+
+    - name: nsf_career
+      label: "NSF CAREER Award"
+      url: "https://new.nsf.gov/funding/opportunities/faculty-early-career-development-program-career"
+      relevance: very_high
+
+    - name: doe_early_career
+      label: "DOE Early Career Research Program"
+      url: "https://science.osti.gov/early-career"
+      relevance: high
+
+    - name: darpa_yfa
+      label: "DARPA Young Faculty Award"
+      url: "https://www.darpa.mil/work-with-us/for-universities/young-faculty-award"
+      relevance: high
+
+    - name: onr_yip
+      label: "ONR Young Investigator Program"
+      url: "https://www.nre.navy.mil/education-outreach/sponsored-research/yip"
+      relevance: high
+
+    - name: fhwa
+      label: "FHWA Research & Technology"
+      url: "https://highways.dot.gov/research"
+      relevance: high

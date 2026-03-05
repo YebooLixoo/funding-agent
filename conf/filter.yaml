@@ -1,5 +1,5 @@
 filter:
-  # Primary AI keywords (must match at least 1)
+  # Primary AI/data-science keywords (must match at least 1) → max 0.6 points
   primary_keywords:
     - "artificial intelligence"
     - "machine learning"
@@ -14,25 +14,112 @@ filter:
     - "large language model"
     - "LLM"
     - "foundation model"
+    - "data-driven"
+    - "data science"
+    - "data analytics"
+    - "predictive model"
 
-  # Domain keywords (boost relevance score)
+  # Domain keywords (boost relevance score) → max 0.4 points
   domain_keywords:
+    # Transportation core
     - "transportation"
     - "vehicle"
     - "traffic"
     - "mobility"
+    - "intelligent transportation"
+    - "urban"
+    # Transportation synonyms
+    - "self-driving"
+    - "driverless"
+    - "unmanned vehicle"
+    - "V2X"
+    - "vehicle-to-everything"
+    - "V2V"
+    - "V2I"
+    - "vehicle-to-infrastructure"
+    - "connected vehicle"
+    - "ride-hailing"
+    - "shared mobility"
+    - "transit"
+    # Network science & resilience
+    - "transportation network"
+    - "network resilience"
+    - "network science"
+    - "complex network"
+    - "graph theory"
+    - "network topology"
+    - "network robustness"
+    - "network vulnerability"
+    - "cascading failure"
+    - "interdependent network"
+    - "network flow"
+    - "network modeling"
+    - "multi-layer network"
+    - "network disruption"
+    - "critical infrastructure network"
+    # Infrastructure & energy
+    - "infrastructure"
+    - "smart city"
     - "energy"
     - "grid"
     - "electricity"
+    - "smart infrastructure"
+    # Civil engineering
+    - "civil engineering"
+    - "structural engineering"
+    - "structural health monitoring"
+    - "geotechnical"
+    - "construction"
+    - "water resources"
+    - "environmental engineering"
+    - "BIM"
+    - "pavement"
+    - "bridge"
+    # Hazard & resilience
     - "disaster"
     - "emergency"
     - "resilience"
     - "network"
-    - "infrastructure"
-    - "smart city"
-    - "connected vehicle"
-    - "intelligent transportation"
-    - "urban"
+    - "hazard"
+    - "evacuation"
+    - "seismic"
+    - "flood"
+    - "wildfire"
+    - "climate adaptation"
+    # Data science & operations research
+    - "optimization"
+    - "operations research"
+    - "routing"
+    - "network optimization"
+    - "statistical"
+    - "predictive modeling"
+    - "logistics"
+    - "supply chain"
+    - "scheduling"
+
+  # Career-stage keywords → max 0.5 points (Track 2)
+  career_keywords:
+    - "early career"
+    - "CAREER"
+    - "young investigator"
+    - "new investigator"
+    - "junior faculty"
+    - "assistant professor"
+    - "emerging researcher"
+    - "early-career"
+    - "beginning investigator"
+    - "young faculty"
+    - "Faculty Early Career"
+
+  # Faculty/PI keywords → max 0.2 points (Track 2)
+  faculty_keywords:
+    - "faculty"
+    - "principal investigator"
+    - "researcher"
+    - "investigator"
+    - "academic"
+    - "university"
+    - "professor"
 
   # Exclusion patterns (skip these)
   exclusions:

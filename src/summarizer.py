@@ -12,11 +12,14 @@ from src.utils import format_date
 logger = logging.getLogger(__name__)
 
 _SYSTEM_PROMPT = """You are a research funding assistant. Generate concise summaries of funding opportunities
-for a Computer Science professor focused on AI/ML applied to transportation and infrastructure."""
+for an assistant professor in Civil & Environmental Engineering (transportation engineering focus) with a CS PhD.
+The professor's interests span autonomous vehicles, V2X, smart infrastructure, network science/resilience,
+civil engineering empowered by AI, general AI/ML, data science, and operations research.
+As a young faculty member, early career awards are also highly relevant."""
 
 _USER_TEMPLATE = """Summarize this funding opportunity in 2-3 sentences, highlighting:
 1. What the funding supports
-2. Relevance to AI + transportation research
+2. Relevance to the professor's research (AI, transportation, civil engineering, data science, or early career)
 3. Key requirements or eligibility
 
 Title: {title}

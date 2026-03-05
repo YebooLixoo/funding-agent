@@ -93,7 +93,7 @@ funding-agent/
 │   ├── filter.yaml                # Keywords & relevance thresholds
 │   └── email.yaml                 # SMTP settings & recipient list
 ├── src/
-│   ├── daily_fetch.py             # Stage 1: Weekly fetch pipeline (7-day window)
+│   ├── weekly_fetch.py             # Stage 1: Weekly fetch pipeline (7-day window)
 │   ├── weekly_email.py            # Stage 2: Weekly email pipeline
 │   ├── models.py                  # Opportunity dataclass (frozen)
 │   ├── state.py                   # SQLite state management
@@ -222,7 +222,7 @@ db.close()
 
 ```bash
 ls outputs/logs/
-tail -50 outputs/logs/daily_fetch_*.log
+tail -50 outputs/logs/weekly_fetch_*.log
 ```
 
 ### View Archived Digests

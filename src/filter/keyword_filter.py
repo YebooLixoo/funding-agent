@@ -1,10 +1,10 @@
-"""Fast keyword-based relevance filtering."""
+"""Fast keyword-based relevance filtering with multi-track scoring."""
 
 from __future__ import annotations
 
 import logging
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Optional
 
 from src.models import Opportunity
@@ -19,16 +19,19 @@ class FilterConfig:
     primary_keywords: list[str]
     domain_keywords: list[str]
     exclusions: list[str]
+    career_keywords: list[str] = field(default_factory=list)
+    faculty_keywords: list[str] = field(default_factory=list)
     keyword_threshold: float = 0.3
 
 
 class KeywordFilter:
-    """Fast first-pass keyword relevance filter.
+    """Fast first-pass keyword relevance filter with multi-track scoring.
 
-    Scoring:
-    - Primary keyword match (AI-related): 0.4 per match (max 0.6)
-    - Domain keyword match (transportation): 0.2 per match (max 0.4)
-    - Exclusion match: set score to 0.0
+    Two independent scoring tracks:
+    - Track 1 (AI+Domain): primary 0.4/match (max 0.6) + domain 0.2/match (max 0.4)
+    - Track 2 (Career+Faculty): career 0.35/match (max 0.5) + faculty 0.15/match (max 0.2)
+    - Cross-bonus: career+domain → +0.15, career+primary → +0.2
+    - Final: max(track1, track2) + cross_bonus, capped at 1.0
     """
 
     def __init__(self, config: FilterConfig) -> None:
@@ -41,6 +44,12 @@ class KeywordFilter:
         ]
         self._exclusion_patterns = [
             re.compile(re.escape(ex), re.IGNORECASE) for ex in config.exclusions
+        ]
+        self._career_patterns = [
+            re.compile(re.escape(kw), re.IGNORECASE) for kw in config.career_keywords
+        ]
+        self._faculty_patterns = [
+            re.compile(re.escape(kw), re.IGNORECASE) for kw in config.faculty_keywords
         ]
 
     def score(self, opp: Opportunity) -> float:
@@ -57,15 +66,32 @@ class KeywordFilter:
                 logger.debug(f"Excluded: {opp.title[:60]}")
                 return 0.0
 
-        # Primary AI keywords
+        # Track 1: AI + Domain
         primary_count = sum(1 for pat in self._primary_patterns if pat.search(text))
         primary_score = min(primary_count * 0.4, 0.6)
 
-        # Domain keywords
         domain_count = sum(1 for pat in self._domain_patterns if pat.search(text))
         domain_score = min(domain_count * 0.2, 0.4)
 
-        total = primary_score + domain_score
+        track1 = primary_score + domain_score
+
+        # Track 2: Career + Faculty
+        career_count = sum(1 for pat in self._career_patterns if pat.search(text))
+        career_score = min(career_count * 0.35, 0.5)
+
+        faculty_count = sum(1 for pat in self._faculty_patterns if pat.search(text))
+        faculty_score = min(faculty_count * 0.15, 0.2)
+
+        track2 = career_score + faculty_score
+
+        # Cross-bonus: career keywords combined with domain or primary
+        cross_bonus = 0.0
+        if career_count > 0 and domain_count > 0:
+            cross_bonus += 0.15
+        if career_count > 0 and primary_count > 0:
+            cross_bonus += 0.2
+
+        total = max(track1, track2) + cross_bonus
         return min(total, 1.0)
 
     def filter(self, opportunities: list[Opportunity]) -> tuple[list[Opportunity], list[Opportunity]]:
@@ -73,8 +99,8 @@ class KeywordFilter:
 
         Returns:
             Tuple of (accepted, borderline) lists.
-            - Accepted: score >= threshold
-            - Borderline: score between llm_review_min and llm_review_max
+            - Accepted: score >= 0.6
+            - Borderline: score between threshold and 0.6
         """
         accepted = []
         borderline = []
@@ -117,6 +143,12 @@ class KeywordFilter:
             if pat.search(text):
                 matched.append(kw)
         for kw, pat in zip(self.config.domain_keywords, self._domain_patterns):
+            if pat.search(text):
+                matched.append(kw)
+        for kw, pat in zip(self.config.career_keywords, self._career_patterns):
+            if pat.search(text):
+                matched.append(kw)
+        for kw, pat in zip(self.config.faculty_keywords, self._faculty_patterns):
             if pat.search(text):
                 matched.append(kw)
         return matched

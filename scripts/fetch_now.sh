@@ -8,5 +8,5 @@ PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 
 cd "$PROJECT_DIR"
 echo "Running weekly fetch pipeline..."
-uv run python -m src.daily_fetch
+uv run python -m src.weekly_fetch
 echo "Done."

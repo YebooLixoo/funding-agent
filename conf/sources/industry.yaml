@@ -47,6 +47,23 @@ industry:
       url: "https://semiconductor.samsung.com/sait/event/global-research-outreach/"
       relevance: medium
 
+    # --- Early career & professional awards ---
+
+    - name: afosr_yip
+      label: "AFOSR Young Investigator Program"
+      url: "https://www.afrl.af.mil/About/Fact-Sheets/Fact-Sheet-Display/Article/2282031/young-investigator-research-program/"
+      relevance: high
+
+    - name: sloan
+      label: "Sloan Research Fellowships"
+      url: "https://sloan.org/fellowships"
+      relevance: high
+
+    - name: asce
+      label: "ASCE Awards and Grants"
+      url: "https://www.asce.org/career-growth/awards-and-honors"
+      relevance: medium
+
     # Removed: Apple (machinelearning.apple.com - ML blog, no funding page)
     # Removed: Meta (llama.com - product page, not funding)
     # Removed: Toyota (tri.global - general homepage, no funding calls)

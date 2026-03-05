@@ -10,7 +10,7 @@
         <string>run</string>
         <string>python</string>
         <string>-m</string>
-        <string>src.daily_fetch</string>
+        <string>src.weekly_fetch</string>
     </array>
     <key>WorkingDirectory</key>
     <string>/Users/boyu/funding-agent</string>
