@@ -278,6 +278,8 @@ These sites actively block automated access via 403 Forbidden responses, SSL res
 | **USDOT** | https://www.transportation.gov/grants | 403 Forbidden | Federal transportation grants — **very high relevance** to AI + transportation research |
 | **DOE** | https://www.energy.gov/funding-financing | 403 Forbidden | Energy and infrastructure funding — relevant to smart grid and energy AI research |
 | **Adobe** | https://research.adobe.com/data-science-research-awards/ | SSL certificate block | Data Science Research Awards for faculty |
+| **Sloan Fellowships** | https://sloan.org/fellowships | 403 Forbidden | Prestigious early-career fellowships for outstanding researchers |
+| **AFOSR YIP** | https://www.afrl.af.mil/About/Fact-Sheets/Fact-Sheet-Display/Article/2282031/young-investigator-research-program/ | 403 Forbidden | Air Force Young Investigator Program for early-career faculty |
 
 ### Aggregator Sites
 
@@ -288,4 +290,4 @@ These are useful search engines for discovering additional opportunities but req
 | **GrantForward** | https://www.grantforward.com/ | University grant search engine; may be available through institutional login |
 | **GrantedAI** | https://grantedai.com/ | AI-specific grant aggregator |
 
-> **Tip**: Consider setting a calendar reminder every Thursday to check the high-relevance sources above (SAM.gov, USDOT, DOE) for new opportunities.
+> **Tip**: Consider setting a calendar reminder every Thursday to check the high-relevance sources above (SAM.gov, USDOT, DOE, Sloan, AFOSR) for new opportunities.
