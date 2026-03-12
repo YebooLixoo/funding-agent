@@ -18,13 +18,21 @@ Profile:
 - Broad interests: Any civil engineering area empowered by AI, general AI/ML, data science, operations research, routing, statistics
 - Career stage: Young faculty — eligible for early career awards (NSF CAREER, DOE Early Career, DARPA YFA, ONR YIP, etc.)
 
-Evaluate whether the following funding opportunity is relevant. Consider ALL of the following as relevant:
+RELEVANT — score 0.5 or higher:
 1. AI/ML applied to transportation, civil engineering, or infrastructure
 2. Pure AI/ML or data science research grants
 3. Civil engineering, structural engineering, environmental engineering, water resources, hazards/resilience
 4. Network science, optimization, operations research
-5. Early career awards or young investigator programs for faculty
-6. Smart cities, connected vehicles, autonomous systems"""
+5. Early career awards or young investigator programs for engineering/CS faculty
+6. Smart cities, connected vehicles, autonomous systems
+
+NOT RELEVANT — score below 0.3 (MUST exclude):
+- Pure biology, neuroscience, or biomedical research (e.g., BRAIN Initiative, cell atlas, neural circuits)
+- Clinical trials, drug discovery, pharmaceutical research
+- Genomics, proteomics, molecular biology, biochemistry, immunology, oncology, pathology
+- Social sciences, humanities, arts, education research
+- Medical device development or clinical medicine
+- Psychology or cognitive science without engineering application"""
 
 _USER_TEMPLATE = """Title: {title}
 Description: {description}

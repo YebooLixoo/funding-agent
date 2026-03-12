@@ -228,6 +228,9 @@
   </div>
 
   <div class="footer">
+    {% if history_url %}
+    <p><a href="{{ history_url }}" style="color: #CC0000;">View Full Opportunity History</a></p>
+    {% endif %}
     <p>Funding Opportunity Search Agent &bull; University of Utah</p>
     <p>Generated automatically. Reply to this email for questions.</p>
   </div>

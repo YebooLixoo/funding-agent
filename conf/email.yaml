@@ -12,3 +12,5 @@ email:
   subject_prefix: "Funding Digest"
   deadline_lookahead_days: 30
   digest_archive_dir: "outputs/digests"
+  history_url: "https://yeboolixoo.github.io/funding-agent/"
+  history_output_dir: "docs"

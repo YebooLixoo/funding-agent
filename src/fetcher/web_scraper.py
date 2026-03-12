@@ -1,4 +1,4 @@
-"""Generic industry web scraper for funding pages."""
+"""Generic web scraper for funding pages with landing page detection."""
 
 from __future__ import annotations
 
@@ -6,6 +6,7 @@ import hashlib
 import logging
 from datetime import datetime
 from typing import Optional
+from urllib.parse import urljoin
 
 from bs4 import BeautifulSoup
 
@@ -19,10 +20,10 @@ logger = logging.getLogger(__name__)
 
 @register_fetcher("web_scraper")
 class WebScraperFetcher(BaseFetcher):
-    """Generic scraper for industry funding pages.
+    """Generic scraper for funding pages with two-phase landing page support.
 
-    Fetches page HTML, extracts text, detects changes via content hashing,
-    and uses LLM to validate real funding opportunities.
+    Phase 1: Fetch page, classify as opportunity_page or landing_page.
+    Phase 2: If landing_page, follow discovered funding links to subpages.
     """
 
     source_name = "web_scraper"
@@ -42,7 +43,6 @@ class WebScraperFetcher(BaseFetcher):
         window_end: datetime,
         keywords: Optional[list[str]] = None,
     ) -> list[Opportunity]:
-        # This is called per-source from the pipeline; override source_name per call
         return []
 
     async def fetch_source(
@@ -53,7 +53,7 @@ class WebScraperFetcher(BaseFetcher):
         window_start: datetime,
         window_end: datetime,
     ) -> list[Opportunity]:
-        """Fetch opportunities from a single industry source.
+        """Fetch opportunities from a single source with landing page detection.
 
         Args:
             name: Source identifier (e.g., 'nvidia').
@@ -83,20 +83,68 @@ class WebScraperFetcher(BaseFetcher):
 
         soup = BeautifulSoup(html, "lxml")
 
-        # Remove script, style, nav, footer elements
+        # Phase 1: Extract links before stripping navigation
+        links = self._extract_links(soup, url)
+
+        # Remove script, style, nav, footer elements for text extraction
         for tag in soup.find_all(["script", "style", "nav", "footer", "header"]):
             tag.decompose()
-
         text = soup.get_text(separator="\n", strip=True)
 
-        # Use LLM validator to identify real opportunities
-        opportunities = self.validator.validate_page_content(
+        # Phase 1: Classify page and extract opportunities/funding links
+        page_type, opportunities, funding_links = self.validator.classify_and_extract(
             text=text,
             url=url,
             label=label,
+            links=links,
             source_name=name,
             source_type=self.source_type,
         )
 
-        logger.info(f"{label}: found {len(opportunities)} validated opportunities")
+        if page_type == "opportunity_page":
+            logger.info(f"{label}: opportunity page, found {len(opportunities)} opportunities")
+            return opportunities
+
+        if page_type == "irrelevant":
+            logger.info(f"{label}: classified as irrelevant, skipping")
+            return opportunities
+
+        # Phase 2: Landing page — follow discovered funding links
+        logger.info(f"{label}: landing page, following {len(funding_links)} funding links")
+        for link_url, link_label in funding_links:
+            try:
+                sub_opps = await self._fetch_subpage(link_url, link_label, name)
+                opportunities.extend(sub_opps)
+            except Exception:
+                logger.debug(f"Failed to fetch subpage: {link_url}")
+
+        logger.info(f"{label}: found {len(opportunities)} total opportunities")
         return opportunities
+
+    def _extract_links(self, soup: BeautifulSoup, base_url: str) -> list[dict]:
+        """Extract all links with anchor text from the page."""
+        links = []
+        for a in soup.find_all("a", href=True):
+            href = urljoin(base_url, a["href"])
+            text = a.get_text(strip=True)
+            if text and href.startswith("http"):
+                links.append({"url": href, "text": text})
+        return links
+
+    async def _fetch_subpage(
+        self, url: str, label: str, source_name: str
+    ) -> list[Opportunity]:
+        """Fetch and validate a specific funding opportunity subpage."""
+        resp = await self._get(url)
+        soup = BeautifulSoup(resp.text, "lxml")
+        for tag in soup.find_all(["script", "style", "nav", "footer", "header"]):
+            tag.decompose()
+        text = soup.get_text(separator="\n", strip=True)
+
+        return self.validator.validate_page_content(
+            text=text,
+            url=url,
+            label=label,
+            source_name=source_name,
+            source_type=self.source_type,
+        )

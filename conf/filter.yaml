@@ -197,6 +197,21 @@ filter:
     - "postdoc only"
     - "high school"
     - "community college"
+    # Biology / biomedical / life sciences
+    - "BRAIN Initiative"
+    - "neuroscience"
+    - "biomedical"
+    - "clinical trial"
+    - "drug discovery"
+    - "pharmaceutical"
+    - "genomics"
+    - "proteomics"
+    - "molecular biology"
+    - "cell biology"
+    - "biochemistry"
+    - "immunology"
+    - "oncology"
+    - "pathology"
 
   # Score thresholds
   keyword_threshold: 0.2

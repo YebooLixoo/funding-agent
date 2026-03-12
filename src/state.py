@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Optional
 
 from src.models import Opportunity
+from src.utils import normalize_url
 
 logger = logging.getLogger(__name__)
 
@@ -77,9 +78,25 @@ class StateDB:
         ).fetchone()
         return row is not None
 
+    def is_url_seen(self, url: str) -> bool:
+        """Check if any stored opportunity has the same normalized URL."""
+        if not url:
+            return False
+        norm = normalize_url(url)
+        rows = self.conn.execute(
+            "SELECT url FROM seen_opportunities"
+        ).fetchall()
+        for row in rows:
+            if normalize_url(row["url"]) == norm:
+                return True
+        return False
+
     def store_opportunity(self, opp: Opportunity) -> bool:
-        """Store an opportunity. Returns False if already exists."""
+        """Store an opportunity. Returns False if already exists (by ID or URL)."""
         if self.is_seen(opp.composite_id):
+            return False
+        if self.is_url_seen(opp.url):
+            logger.debug(f"URL-dedup: {opp.title[:60]} (url={opp.url})")
             return False
         self.conn.execute(
             """INSERT INTO seen_opportunities
@@ -113,14 +130,25 @@ class StateDB:
         return [dict(row) for row in rows]
 
     def get_upcoming_deadlines(self, days: int = 30) -> list[dict]:
-        """Get opportunities with deadlines within the next N days."""
+        """Get opportunities with deadlines within the next N days.
+
+        Excludes already-emailed items to prevent duplicates in digest.
+        """
         now = datetime.now(timezone.utc).isoformat()
         future = (datetime.now(timezone.utc) + timedelta(days=days)).isoformat()
         rows = self.conn.execute(
             """SELECT * FROM seen_opportunities
             WHERE deadline IS NOT NULL AND deadline >= ? AND deadline <= ?
+                  AND status != 'emailed'
             ORDER BY deadline ASC""",
             (now, future),
+        ).fetchall()
+        return [dict(row) for row in rows]
+
+    def get_emailed_opportunities(self) -> list[dict]:
+        """Get all opportunities that have been emailed, newest first."""
+        rows = self.conn.execute(
+            "SELECT * FROM seen_opportunities WHERE status = 'emailed' ORDER BY fetched_at DESC"
         ).fetchall()
         return [dict(row) for row in rows]
 

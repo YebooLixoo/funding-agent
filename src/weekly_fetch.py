@@ -21,6 +21,7 @@ from omegaconf import DictConfig, OmegaConf
 
 from src.emailer import Emailer
 from src.fetcher import get_fetcher
+from src.fetcher.grants_gov import GrantsGovFetcher
 from src.fetcher.web_scraper import WebScraperFetcher
 from src.filter.keyword_filter import FilterConfig, KeywordFilter
 from src.filter.llm_filter import LLMFilter
@@ -138,6 +139,34 @@ async def fetch_industry(
     return opportunities
 
 
+async def fetch_approaching_deadlines(cfg: DictConfig) -> list[Opportunity]:
+    """Fetch opportunities with approaching deadlines from Grants.gov.
+
+    Complements the normal post_date-based fetch by finding older opportunities
+    whose deadlines are approaching within the configured lookahead window.
+    """
+    gov_cfg = cfg.get("government", {})
+    grants_cfg = gov_cfg.get("grants_gov", {})
+
+    if not grants_cfg.get("enabled", False):
+        return []
+
+    lookahead_days = grants_cfg.get("deadline_lookahead_days", 30)
+    keywords = list(grants_cfg.get("search_keywords", []))
+
+    fetcher = GrantsGovFetcher()
+    try:
+        return await fetcher.fetch_approaching_deadlines(
+            keywords=keywords,
+            lookahead_days=lookahead_days,
+        )
+    except Exception:
+        logger.exception("Approaching-deadline fetch failed")
+        return []
+    finally:
+        await fetcher.close()
+
+
 async def run_pipeline(cfg: DictConfig) -> None:
     """Execute the weekly fetch pipeline."""
     db = StateDB(cfg.project.db_path)
@@ -162,8 +191,17 @@ async def run_pipeline(cfg: DictConfig) -> None:
     all_opps = gov_opps + ind_opps
     logger.info(f"Total fetched: {len(all_opps)} ({len(gov_opps)} gov, {len(ind_opps)} industry)")
 
-    # Step 3: Deduplicate against SQLite
-    new_opps = [opp for opp in all_opps if not db.is_seen(opp.composite_id)]
+    # Step 2b: Fetch approaching-deadline opportunities from Grants.gov
+    deadline_opps = await fetch_approaching_deadlines(cfg)
+    if deadline_opps:
+        logger.info(f"Approaching deadlines: {len(deadline_opps)} opportunities")
+        all_opps.extend(deadline_opps)
+
+    # Step 3: Deduplicate against SQLite (by composite_id and by URL)
+    new_opps = [
+        opp for opp in all_opps
+        if not db.is_seen(opp.composite_id) and not db.is_url_seen(opp.url)
+    ]
     logger.info(f"After dedup: {len(new_opps)} new opportunities")
 
     if not new_opps:
@@ -250,11 +288,13 @@ def _generate_digest(cfg: DictConfig, db: StateDB) -> None:
     )
 
     date_str = datetime.now().strftime("%B %d, %Y")
+    history_url = email_cfg.get("history_url", "")
     html = emailer.compose(
         government_opps=gov_opps,
         industry_opps=ind_opps,
         upcoming_deadlines=upcoming,
         date_str=date_str,
+        history_url=history_url or None,
     )
 
     # Archive with date-only filename so weekly_email can find it

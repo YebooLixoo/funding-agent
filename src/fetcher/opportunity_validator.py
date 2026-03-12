@@ -64,6 +64,36 @@ Page content (truncated):
 Respond with ONLY a JSON array. If no currently-open opportunities found, return [].
 Example: [{{"title": "...", "description": "...", "deadline": "2026-06-15", "deadline_status": "explicit_date", "funding_amount": "$50K", "confidence": 0.9}}]"""
 
+_CLASSIFY_TEMPLATE = """Analyze this web page from "{label}" ({url}).
+
+STEP 1: Classify this page:
+- "opportunity_page": A specific funding opportunity with details (deadline, eligibility, application info)
+- "landing_page": A general page that LISTS or LINKS TO multiple funding opportunities or programs
+- "irrelevant": Not related to funding (news, about us, general info, blog)
+
+STEP 2: If "opportunity_page", extract opportunity details with these fields:
+- title, description, deadline (ISO YYYY-MM-DD or null), deadline_status ("explicit_date"|"rolling"|"not_found"), funding_amount (or null), confidence (0.0-1.0)
+
+STEP 3: If "landing_page", identify which links on this page likely point to specific funding opportunities or grant programs.
+Here are the links found on this page:
+{links_json}
+
+Today's date: {today}
+
+Page content (truncated):
+{content}
+
+Respond with ONLY a JSON object:
+{{
+  "page_type": "opportunity_page" | "landing_page" | "irrelevant",
+  "opportunities": [...],
+  "funding_links": [{{"url": "...", "label": "..."}}]
+}}
+
+If opportunity_page: fill "opportunities" array, leave "funding_links" empty.
+If landing_page: fill "funding_links" with URLs pointing to grant/funding pages, "opportunities" can be empty.
+If irrelevant: both arrays empty."""
+
 _ITEM_VALIDATE_TEMPLATE = """Is this a real, currently-open funding opportunity
 (grant, award, RFP, call for proposals) that is CURRENTLY ACCEPTING APPLICATIONS?
 
@@ -149,6 +179,104 @@ class OpportunityValidator:
         except Exception:
             logger.exception(f"Page validation failed for {label}")
             return []
+
+    def classify_and_extract(
+        self,
+        text: str,
+        url: str,
+        label: str,
+        links: list[dict],
+        source_name: str,
+        source_type: str = "industry",
+    ) -> tuple[str, list[Opportunity], list[tuple[str, str]]]:
+        """Classify a page and extract opportunities or funding links.
+
+        Args:
+            text: Cleaned page text content.
+            url: Source URL.
+            label: Human-readable source label.
+            links: List of {"url": ..., "text": ...} dicts from the page.
+            source_name: Source identifier for Opportunity.source field.
+            source_type: 'industry' or 'government'.
+
+        Returns:
+            Tuple of (page_type, opportunities, funding_links).
+            page_type: 'opportunity_page', 'landing_page', or 'irrelevant'.
+            opportunities: Extracted Opportunity objects (if opportunity_page).
+            funding_links: List of (url, label) tuples to follow (if landing_page).
+        """
+        client = self._get_client()
+        if client is None:
+            logger.warning(f"Validator unavailable, skipping {label}")
+            return "irrelevant", [], []
+
+        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+
+        # Limit links to keep prompt manageable
+        links_truncated = links[:50]
+        links_json = json.dumps(links_truncated, indent=2)[:3000]
+
+        prompt = _CLASSIFY_TEMPLATE.format(
+            label=label,
+            url=url,
+            today=today,
+            content=text[:5000],
+            links_json=links_json,
+        )
+
+        try:
+            response = client.chat.completions.create(
+                model=self.model,
+                max_completion_tokens=1500,
+                temperature=0.1,
+                messages=[
+                    {"role": "system", "content": _SYSTEM_PROMPT},
+                    {"role": "user", "content": prompt},
+                ],
+            )
+            raw = response.choices[0].message.content.strip()
+            return self._parse_classify_response(raw, url, source_name, source_type)
+        except Exception:
+            logger.exception(f"Page classification failed for {label}")
+            return "irrelevant", [], []
+
+    def _parse_classify_response(
+        self, raw: str, url: str, source_name: str, source_type: str
+    ) -> tuple[str, list[Opportunity], list[tuple[str, str]]]:
+        """Parse LLM classification response."""
+        # Strip markdown code fences
+        if raw.startswith("```"):
+            raw = raw.split("\n", 1)[1] if "\n" in raw else raw[3:]
+        if raw.endswith("```"):
+            raw = raw[: raw.rfind("```")]
+        raw = raw.strip()
+
+        try:
+            data = json.loads(raw)
+        except json.JSONDecodeError:
+            logger.warning(f"Failed to parse classify response: {raw[:200]}")
+            return "irrelevant", [], []
+
+        page_type = data.get("page_type", "irrelevant")
+
+        # Parse opportunities
+        opportunities = []
+        if page_type == "opportunity_page":
+            opportunities = self._parse_page_response(
+                json.dumps(data.get("opportunities", [])),
+                url, source_name, source_type,
+            )
+
+        # Parse funding links
+        funding_links: list[tuple[str, str]] = []
+        if page_type == "landing_page":
+            for link in data.get("funding_links", []):
+                link_url = link.get("url", "")
+                link_label = link.get("label", "")
+                if link_url and link_url.startswith("http"):
+                    funding_links.append((link_url, link_label))
+
+        return page_type, opportunities, funding_links
 
     def validate_opportunity(
         self,

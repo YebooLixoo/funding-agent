@@ -20,6 +20,7 @@ from dotenv import load_dotenv
 from omegaconf import DictConfig, OmegaConf
 
 from src.emailer import Emailer
+from src.history_generator import HistoryGenerator
 from src.state import StateDB
 from src.utils import setup_logging
 
@@ -97,6 +98,15 @@ def run_pipeline(cfg: DictConfig, test_mode: bool = False) -> None:
 
     # Step 5: Record email
     db.record_email(count=total_count, success=success)
+
+    # Step 6: Generate history page
+    try:
+        history_output_dir = email_cfg.get("history_output_dir", "outputs/history")
+        history_gen = HistoryGenerator(output_dir=history_output_dir)
+        history_gen.generate(db)
+    except Exception:
+        logger.exception("History page generation failed (non-fatal)")
+
     db.close()
 
 

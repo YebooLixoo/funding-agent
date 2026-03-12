@@ -34,6 +34,7 @@ government:
     base_url: "https://api.simpler.grants.gov/v1/opportunities/search"
     # API key provided via GRANTS_GOV_API_KEY env var
     rate_limit_per_minute: 60
+    deadline_lookahead_days: 30
     search_keywords:
       - "artificial intelligence"
       - "machine learning"
@@ -112,3 +113,8 @@ government:
       label: "EPA Grants & Funding"
       url: "https://www.epa.gov/grants"
       relevance: high
+
+    - name: epa_wildfire_smoke
+      label: "EPA Wildfire Smoke Preparedness Grant"
+      url: "https://www.epa.gov/emergencies-iaq/wildfire-smoke-preparedness-community-buildings-grant-program"
+      relevance: very_high

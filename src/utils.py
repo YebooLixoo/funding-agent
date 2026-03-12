@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import logging
+import re
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 from zoneinfo import ZoneInfo
 
 from rich.logging import RichHandler
@@ -94,6 +96,28 @@ def format_date_iso(dt: datetime | None) -> str:
     if dt is None:
         return ""
     return dt.strftime("%Y-%m-%d")
+
+
+def normalize_url(url: str) -> str:
+    """Normalize a URL for deduplication.
+
+    Strips trailing slashes, fragments, and UTM tracking parameters.
+    Lowercases the scheme and netloc.
+    """
+    if not url:
+        return ""
+    parsed = urlparse(url.strip())
+    # Lowercase scheme and host
+    scheme = parsed.scheme.lower()
+    netloc = parsed.netloc.lower()
+    # Strip trailing slashes from path
+    path = parsed.path.rstrip("/")
+    # Remove tracking params (utm_*)
+    params = parse_qs(parsed.query, keep_blank_values=False)
+    filtered = {k: v for k, v in params.items() if not k.startswith("utm_")}
+    query = urlencode(filtered, doseq=True) if filtered else ""
+    # Drop fragment
+    return urlunparse((scheme, netloc, path, parsed.params, query, ""))
 
 
 def parse_date(date_str: str) -> datetime | None:

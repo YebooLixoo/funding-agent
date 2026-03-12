@@ -46,6 +46,7 @@ class Emailer:
         industry_opps: list[dict],
         upcoming_deadlines: list[dict],
         date_str: Optional[str] = None,
+        history_url: Optional[str] = None,
     ) -> str:
         """Compose HTML digest from template.
 
@@ -54,6 +55,7 @@ class Emailer:
             industry_opps: Industry opportunities grouped by source.
             upcoming_deadlines: Opportunities with upcoming deadlines.
             date_str: Date string for the subject line.
+            history_url: URL to the full opportunity history page.
 
         Returns:
             Rendered HTML string.
@@ -83,6 +85,7 @@ class Emailer:
             industry_groups=ind_grouped,
             upcoming_deadlines=upcoming_deadlines,
             deadline_count=len(upcoming_deadlines),
+            history_url=history_url,
         )
 
         return html

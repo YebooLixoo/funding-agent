@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Funding Opportunity History</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+      color: #333;
+      max-width: 800px;
+      margin: 0 auto;
+      padding: 20px;
+      background-color: #f5f5f5;
+    }
+    .header {
+      background-color: #CC0000;
+      color: white;
+      padding: 24px;
+      border-radius: 8px 8px 0 0;
+      text-align: center;
+    }
+    .header h1 {
+      margin: 0;
+      font-size: 24px;
+      font-weight: 600;
+    }
+    .header .meta {
+      margin-top: 8px;
+      font-size: 14px;
+      opacity: 0.9;
+    }
+    .search-bar {
+      background-color: white;
+      padding: 16px 24px;
+      border-bottom: 1px solid #eee;
+    }
+    .search-bar input {
+      width: 100%;
+      padding: 10px 14px;
+      font-size: 14px;
+      border: 1px solid #ddd;
+      border-radius: 6px;
+      box-sizing: border-box;
+      outline: none;
+    }
+    .search-bar input:focus {
+      border-color: #CC0000;
+      box-shadow: 0 0 0 2px rgba(204, 0, 0, 0.1);
+    }
+    .content {
+      background-color: white;
+      padding: 24px;
+      border-radius: 0 0 8px 8px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    .month-section {
+      margin-bottom: 28px;
+    }
+    .month-title {
+      font-size: 18px;
+      font-weight: 600;
+      color: #CC0000;
+      border-bottom: 2px solid #CC0000;
+      padding-bottom: 8px;
+      margin-bottom: 16px;
+    }
+    .opportunity {
+      padding: 12px 16px;
+      margin-bottom: 12px;
+      border-left: 3px solid #CC0000;
+      background-color: #fafafa;
+      border-radius: 0 4px 4px 0;
+    }
+    .opp-title {
+      font-size: 15px;
+      font-weight: 600;
+      margin-bottom: 6px;
+    }
+    .opp-title a {
+      color: #CC0000;
+      text-decoration: none;
+    }
+    .opp-title a:hover {
+      text-decoration: underline;
+    }
+    .opp-summary {
+      font-size: 13px;
+      color: #555;
+      line-height: 1.5;
+      margin-bottom: 6px;
+    }
+    .opp-meta {
+      font-size: 12px;
+      color: #888;
+    }
+    .opp-meta span {
+      margin-right: 12px;
+    }
+    .source-badge {
+      display: inline-block;
+      background-color: #f0f0f0;
+      color: #666;
+      font-size: 11px;
+      padding: 2px 8px;
+      border-radius: 10px;
+      font-weight: 500;
+      text-transform: uppercase;
+    }
+    .footer {
+      text-align: center;
+      font-size: 12px;
+      color: #999;
+      margin-top: 24px;
+      padding-top: 16px;
+      border-top: 1px solid #eee;
+    }
+    .hidden {
+      display: none !important;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>Funding Opportunity History</h1>
+    <div class="meta">{{ total_count }} opportunities &bull; Last updated: {{ last_updated }}</div>
+  </div>
+
+  <div class="search-bar">
+    <input type="text" id="searchInput" placeholder="Search by title, source, or keyword..." oninput="filterOpportunities()">
+  </div>
+
+  <div class="content" id="content">
+    {% for group in month_groups %}
+    <div class="month-section" data-month="{{ group.label }}">
+      <div class="month-title">{{ group.label }}</div>
+      {% for opp in group.opportunities %}
+      <div class="opportunity" data-searchable="{{ opp.title|lower }} {{ opp.source|lower }} {{ (opp.summary or '')|lower }}">
+        <div class="opp-title">
+          <a href="{{ opp.url }}" target="_blank" rel="noopener">{{ opp.title }}</a>
+        </div>
+        {% if opp.summary %}
+        <div class="opp-summary">{{ opp.summary }}</div>
+        {% endif %}
+        <div class="opp-meta">
+          <span class="source-badge">{{ opp.source | replace('_', ' ') }}</span>
+          {% if opp.funding_amount %}
+          <span>{{ opp.funding_amount }}</span>
+          {% endif %}
+          {% if opp.deadline %}
+          <span>Deadline: {{ opp.deadline }}</span>
+          {% endif %}
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+    {% endfor %}
+  </div>
+
+  <div class="footer">
+    <p>Funding Opportunity Search Agent &bull; University of Utah</p>
+    <p>Generated automatically.</p>
+  </div>
+
+  <script>
+    function filterOpportunities() {
+      var query = document.getElementById('searchInput').value.toLowerCase();
+      var opps = document.querySelectorAll('.opportunity');
+      var sections = document.querySelectorAll('.month-section');
+
+      opps.forEach(function(opp) {
+        var text = opp.getAttribute('data-searchable') || '';
+        if (query === '' || text.indexOf(query) !== -1) {
+          opp.classList.remove('hidden');
+        } else {
+          opp.classList.add('hidden');
+        }
+      });
+
+      // Hide month sections with no visible opportunities
+      sections.forEach(function(section) {
+        var visible = section.querySelectorAll('.opportunity:not(.hidden)');
+        if (visible.length === 0) {
+          section.classList.add('hidden');
+        } else {
+          section.classList.remove('hidden');
+        }
+      });
+    }
+  </script>
+</body>
+</html>
