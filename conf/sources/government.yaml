@@ -14,6 +14,20 @@ government:
       - "early career"
       - "CAREER"
 
+  nih:
+    enabled: true
+    name: "NIH"
+    rss_url: "https://grants.nih.gov/grants/guide/newsfeed/fundingopps.xml"
+    search_keywords:
+      - "artificial intelligence"
+      - "machine learning"
+      - "data science"
+      - "environmental health"
+      - "public health"
+      - "air quality"
+      - "epidemiology"
+      - "early career"
+
   grants_gov:
     enabled: true
     name: "Grants.gov"
@@ -43,6 +57,19 @@ government:
       - "self-driving"
       - "connected vehicle"
       - "V2X"
+      - "air quality"
+      - "water quality"
+      - "climate change"
+      - "sustainability"
+      - "environmental monitoring"
+      - "wildfire"
+      - "public health"
+      - "green infrastructure"
+      - "renewable energy"
+      - "waste management"
+      - "hazard mitigation"
+      - "emergency preparedness"
+      - "community resilience"
 
   # Government web pages (scraped like industry but categorized as government)
   web_sources:
@@ -79,4 +106,9 @@ government:
     - name: fhwa
       label: "FHWA Research & Technology"
       url: "https://highways.dot.gov/research"
+      relevance: high
+
+    - name: epa
+      label: "EPA Grants & Funding"
+      url: "https://www.epa.gov/grants"
       relevance: high

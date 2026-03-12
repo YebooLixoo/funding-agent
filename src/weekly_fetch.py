@@ -19,6 +19,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 from omegaconf import DictConfig, OmegaConf
 
+from src.emailer import Emailer
 from src.fetcher import get_fetcher
 from src.fetcher.web_scraper import WebScraperFetcher
 from src.filter.keyword_filter import FilterConfig, KeywordFilter
@@ -46,17 +47,26 @@ async def fetch_government(
 ) -> list[Opportunity]:
     """Fetch from all government API sources and web pages in parallel."""
     tasks = []
+    api_fetchers = []
 
     gov_cfg = cfg.get("government", {})
 
     # NSF
     if gov_cfg.get("nsf", {}).get("enabled", False):
         fetcher = get_fetcher("nsf", model=model)
+        api_fetchers.append(fetcher)
         tasks.append(fetcher.fetch(window_start, window_end, list(gov_cfg.nsf.search_keywords)))
+
+    # NIH
+    if gov_cfg.get("nih", {}).get("enabled", False):
+        fetcher = get_fetcher("nih", model=model)
+        api_fetchers.append(fetcher)
+        tasks.append(fetcher.fetch(window_start, window_end, list(gov_cfg.nih.search_keywords)))
 
     # Grants.gov
     if gov_cfg.get("grants_gov", {}).get("enabled", False):
         fetcher = get_fetcher("grants_gov")
+        api_fetchers.append(fetcher)
         tasks.append(fetcher.fetch(window_start, window_end, list(gov_cfg.grants_gov.search_keywords)))
 
     # Government web sources (DOE, USDOT, etc.)
@@ -84,7 +94,9 @@ async def fetch_government(
         else:
             opportunities.extend(result)
 
-    # Close government web scraper if created
+    # Close all fetcher clients
+    for f in api_fetchers:
+        await f.close()
     if web_sources:
         await scraper.close()
 
@@ -204,12 +216,51 @@ async def run_pipeline(cfg: DictConfig) -> None:
     # Step 7: Record successful fetch
     db.record_fetch("all", window_start, window_end, success=True, count=stored_count)
 
+    # Step 8: Generate digest HTML for evening email
+    _generate_digest(cfg, db)
+
     # Cleanup old entries
     cleaned = db.cleanup_old(days=cfg.project.get("cleanup_days", 90))
     if cleaned:
         logger.info(f"Cleaned up {cleaned} old entries")
 
     db.close()
+
+
+def _generate_digest(cfg: DictConfig, db: StateDB) -> None:
+    """Generate and archive digest HTML for the evening email pipeline."""
+    email_cfg = cfg.get("email", {})
+
+    pending = db.get_pending_opportunities()
+    lookahead = email_cfg.get("deadline_lookahead_days", 30)
+    upcoming = db.get_upcoming_deadlines(days=lookahead)
+
+    if not pending and not upcoming:
+        logger.info("No opportunities for digest, skipping generation")
+        return
+
+    gov_opps = [o for o in pending if o.get("source_type") == "government"]
+    ind_opps = [o for o in pending if o.get("source_type") == "industry"]
+
+    emailer = Emailer(
+        smtp_host=email_cfg.get("smtp_host", "smtp.gmail.com"),
+        smtp_port=email_cfg.get("smtp_port", 587),
+        use_tls=email_cfg.get("use_tls", True),
+        archive_dir=email_cfg.get("digest_archive_dir", "outputs/digests"),
+    )
+
+    date_str = datetime.now().strftime("%B %d, %Y")
+    html = emailer.compose(
+        government_opps=gov_opps,
+        industry_opps=ind_opps,
+        upcoming_deadlines=upcoming,
+        date_str=date_str,
+    )
+
+    # Archive with date-only filename so weekly_email can find it
+    date_tag = datetime.now().strftime("%Y%m%d")
+    emailer.archive_digest(html, date_str=date_tag)
+    logger.info(f"Digest pre-generated: {len(pending)} opps, {len(upcoming)} deadlines")
 
 
 def main() -> None:

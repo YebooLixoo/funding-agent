@@ -142,3 +142,36 @@ class Emailer:
         path.write_text(html_body, encoding="utf-8")
         logger.info(f"Digest archived to {path}")
         return path
+
+    def load_latest_digest(self, max_age_hours: int = 12) -> Optional[str]:
+        """Load the most recent pre-generated digest HTML.
+
+        Args:
+            max_age_hours: Reject digests older than this many hours.
+
+        Returns:
+            HTML string if a recent digest exists, None otherwise.
+        """
+        pattern = "digest_*.html"
+        digests = sorted(self.archive_dir.glob(pattern), reverse=True)
+
+        if not digests:
+            logger.warning("No digest files found in %s", self.archive_dir)
+            return None
+
+        latest = digests[0]
+
+        # Check age — use file modification time
+        mtime = datetime.fromtimestamp(latest.stat().st_mtime, tz=timezone.utc)
+        age_hours = (datetime.now(tz=timezone.utc) - mtime).total_seconds() / 3600
+
+        if age_hours > max_age_hours:
+            logger.warning(
+                "Latest digest %s is %.1f hours old (max %d), rejecting",
+                latest.name, age_hours, max_age_hours,
+            )
+            return None
+
+        html = latest.read_text(encoding="utf-8")
+        logger.info("Loaded pre-generated digest: %s (%.1f hours old)", latest.name, age_hours)
+        return html
