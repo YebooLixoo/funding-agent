@@ -2,7 +2,7 @@
 
 ## Overview
 
-Automated Python system that searches funding/grant opportunities from government APIs and industry websites weekly, filters for AI + transportation relevance, and emails a digest every Thursday at 8:00 PM to bo.yu@utah.edu.
+Automated Python system that searches funding/grant opportunities from government APIs and industry websites weekly, filters for AI + transportation relevance, and emails a digest every Thursday at 8:00 PM to configured recipients.
 
 ---
 
@@ -128,6 +128,6 @@ STAGE 2: Weekly Email (every Thursday at 8:00 PM)
 |------|----------|--------|
 | SAM.gov | Included | Removed (legal risk) |
 | LLM provider | Anthropic Claude Haiku | OpenAI GPT-5.2 |
-| Email recipients | Single (bo.yu@utah.edu) | Multiple (4 recipients) |
+| Email recipients | Single | Multiple (4 recipients) |
 | OpenAI API param | `max_tokens` | `max_completion_tokens` (GPT-5.2 requirement) |
 | Grants.gov API body | Flat pagination | Nested `sort_order` array format |

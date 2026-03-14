@@ -155,15 +155,19 @@ Required keys in `.env`:
 
 ### 3. Configure Recipients
 
-Edit `conf/email.yaml` to add or remove email recipients:
+Copy the example and fill in your recipients:
+
+```bash
+cp conf/email.yaml.example conf/email.yaml
+```
+
+Then edit `conf/email.yaml` to add your email recipients:
 
 ```yaml
 email:
   recipients:
-    - "bo.yu@utah.edu"
-    - "chenxi.liu@utah.edu"
-    - "fred.yang@utah.edu"
-    - "xuewen.luo@utah.edu"
+    - "user1@example.com"
+    - "user2@example.com"
 ```
 
 ### 4. Install Scheduling

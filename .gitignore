@@ -14,6 +14,9 @@ wheels/
 .env.*
 !.env.example
 
+# Email config with real addresses (use email.yaml.example as template)
+conf/email.yaml
+
 # Data
 data/*.db
 

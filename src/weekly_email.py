@@ -5,7 +5,7 @@ from the noon fetch pipeline and sends via Gmail SMTP.
 
 Usage:
     uv run python -m src.weekly_email           # Production: send to all recipients
-    uv run python -m src.weekly_email --test    # Test: send only to bo.yu@utah.edu
+    uv run python -m src.weekly_email --test    # Test: send only to test_recipient
 """
 
 from __future__ import annotations
@@ -76,11 +76,11 @@ def run_pipeline(cfg: DictConfig, test_mode: bool = False) -> None:
     # Step 3: Send email
     date_str = datetime.now().strftime("%B %d, %Y")
     if test_mode:
-        recipients = [email_cfg.get("test_recipient", "bo.yu@utah.edu")]
+        recipients = [email_cfg.get("test_recipient")]
         subject = f"[TEST] {email_cfg.get('subject_prefix', 'Funding Digest')}: {date_str} ({total_count} opportunit{'y' if total_count == 1 else 'ies'})"
         logger.info(f"TEST MODE: sending only to {recipients[0]}")
     else:
-        recipients = list(email_cfg.get("recipients", ["bo.yu@utah.edu"]))
+        recipients = list(email_cfg.get("recipients", []))
         subject = f"{email_cfg.get('subject_prefix', 'Funding Digest')}: {date_str} ({total_count} opportunit{'y' if total_count == 1 else 'ies'})"
 
     success = emailer.send(recipients=recipients, subject=subject, html_body=html)
@@ -114,7 +114,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Weekly funding digest email")
     parser.add_argument(
         "--test", action="store_true",
-        help="Test mode: send only to bo.yu@utah.edu, don't mark as emailed",
+        help="Test mode: send only to test_recipient, don't mark as emailed",
     )
     args = parser.parse_args()
 
