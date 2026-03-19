@@ -1,0 +1,29 @@
+FROM python:3.12-slim
+
+WORKDIR /app
+
+# Install system deps for psycopg/asyncpg
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gcc libpq-dev && \
+    rm -rf /var/lib/apt/lists/*
+
+COPY pyproject.toml uv.lock ./
+COPY src/ src/
+COPY conf/ conf/
+COPY web/ web/
+COPY templates/ templates/
+COPY alembic/ alembic/
+COPY alembic.ini .
+
+RUN pip install --no-cache-dir \
+    fastapi[standard] uvicorn[standard] \
+    sqlalchemy[asyncio] asyncpg alembic \
+    python-jose[cryptography] passlib[bcrypt] \
+    pydantic-settings python-multipart \
+    pymupdf email-validator \
+    httpx feedparser beautifulsoup4 lxml jinja2 \
+    hydra-core omegaconf python-dotenv openai certifi rich tenacity
+
+EXPOSE 8000
+
+CMD ["uvicorn", "web.main:app", "--host", "0.0.0.0", "--port", "8000"]

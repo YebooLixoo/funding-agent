@@ -28,6 +28,13 @@ outputs/
 .vscode/
 *.swp
 
+# Uploaded user documents
+uploads/
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+
 # OS files
 .DS_Store
 .Rhistory
