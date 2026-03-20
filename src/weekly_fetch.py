@@ -197,10 +197,31 @@ async def run_pipeline(cfg: DictConfig) -> None:
         logger.info(f"Approaching deadlines: {len(deadline_opps)} opportunities")
         all_opps.extend(deadline_opps)
 
-    # Step 3: Deduplicate against SQLite (by composite_id and by URL)
+    # Step 2c: Deduplicate within current batch (cross-source)
+    seen_titles = []
+    deduped_opps = []
+    for opp in all_opps:
+        from difflib import SequenceMatcher
+        import re as _re
+        norm = _re.sub(r'\s+', ' ', _re.sub(r'[^\w\s]', '', opp.title.lower().strip()))
+        is_dup = False
+        for seen in seen_titles:
+            if SequenceMatcher(None, norm, seen).ratio() >= 0.80:
+                logger.debug(f"Batch dedup: skipping '{opp.title[:60]}' (similar to existing)")
+                is_dup = True
+                break
+        if not is_dup:
+            seen_titles.append(norm)
+            deduped_opps.append(opp)
+    all_opps = deduped_opps
+    logger.info(f"After batch dedup: {len(all_opps)} unique opportunities")
+
+    # Step 3: Deduplicate against SQLite (by composite_id, URL, and title similarity)
     new_opps = [
         opp for opp in all_opps
-        if not db.is_seen(opp.composite_id) and not db.is_url_seen(opp.url)
+        if not db.is_seen(opp.composite_id)
+        and not db.is_url_seen(opp.url)
+        and not db.is_title_similar(opp.title)
     ]
     logger.info(f"After dedup: {len(new_opps)} new opportunities")
 

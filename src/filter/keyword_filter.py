@@ -34,6 +34,27 @@ class KeywordFilter:
     - Final: max(track1, track2) + cross_bonus, capped at 1.0
     """
 
+    _HEALTH_ADJACENT = re.compile(
+        r'(?:health|medical|clinical|patient|hospital|treatment|disease|'
+        r'disorder|wellness|healthcare|care delivery|health care|'
+        r'health system|health intervention|health outcome|health disparity|'
+        r'health equity|maternal|pediatric|geriatric|surgical|diagnostic|'
+        r'therapeutic|rehabilitation|nursing|pharmacy|dentistry|veterinary)',
+        re.IGNORECASE,
+    )
+    _ENGINEERING_CONTEXT = re.compile(
+        r'(?:civil engineering|transportation|infrastructure|'
+        r'environmental engineering|air quality|water quality|'
+        r'smart city|sensor|IoT|monitoring system|'
+        r'building|HVAC|ventilation|indoor environment|'
+        r'construction|structural|geotechnical|'
+        r'traffic|vehicle|mobility|highway|road|bridge|pavement|'
+        r'stormwater|wastewater|water treatment|remediation|pollution|'
+        r'wildfire|flood|earthquake|hurricane|hazard|emergency management|'
+        r'urban planning|land use|resilient infrastructure)',
+        re.IGNORECASE,
+    )
+
     def __init__(self, config: FilterConfig) -> None:
         self.config = config
         self._primary_patterns = [
@@ -65,6 +86,12 @@ class KeywordFilter:
             if pat.search(text):
                 logger.debug(f"Excluded: {opp.title[:60]}")
                 return 0.0
+
+        # Domain-context check: health-adjacent topics need engineering context
+        if self._HEALTH_ADJACENT.search(text) and not self._ENGINEERING_CONTEXT.search(text):
+            # Health-adjacent content without engineering context → reject
+            logger.debug(f"Health-context rejected: {opp.title[:60]}")
+            return 0.0
 
         # Track 1: AI + Domain
         primary_count = sum(1 for pat in self._primary_patterns if pat.search(text))

@@ -8,7 +8,7 @@
     body {
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
       color: #333;
-      max-width: 800px;
+      max-width: 900px;
       margin: 0 auto;
       padding: 20px;
       background-color: #f5f5f5;
@@ -20,43 +20,86 @@
       border-radius: 8px 8px 0 0;
       text-align: center;
     }
-    .header h1 {
-      margin: 0;
-      font-size: 24px;
-      font-weight: 600;
-    }
-    .header .meta {
-      margin-top: 8px;
-      font-size: 14px;
-      opacity: 0.9;
-    }
-    .search-bar {
+    .header h1 { margin: 0; font-size: 24px; font-weight: 600; }
+    .header .meta { margin-top: 8px; font-size: 14px; opacity: 0.9; }
+
+    .filters-bar {
       background-color: white;
       padding: 16px 24px;
       border-bottom: 1px solid #eee;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      align-items: center;
     }
-    .search-bar input {
-      width: 100%;
-      padding: 10px 14px;
+    .filters-bar input[type="text"] {
+      flex: 1;
+      min-width: 200px;
+      padding: 8px 12px;
       font-size: 14px;
       border: 1px solid #ddd;
       border-radius: 6px;
-      box-sizing: border-box;
       outline: none;
     }
-    .search-bar input:focus {
+    .filters-bar input[type="text"]:focus {
       border-color: #CC0000;
       box-shadow: 0 0 0 2px rgba(204, 0, 0, 0.1);
     }
+    .filters-bar select {
+      padding: 8px 12px;
+      font-size: 13px;
+      border: 1px solid #ddd;
+      border-radius: 6px;
+      background: white;
+      cursor: pointer;
+      outline: none;
+    }
+    .filters-bar select:focus {
+      border-color: #CC0000;
+    }
+    .filter-label {
+      font-size: 12px;
+      color: #666;
+      font-weight: 500;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .filter-group {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .alert-section {
+      background: linear-gradient(135deg, #fff3e0, #ffe0b2);
+      border: 1px solid #ffb74d;
+      border-radius: 8px;
+      padding: 16px 20px;
+      margin: 16px 0;
+    }
+    .alert-section h2 {
+      margin: 0 0 12px 0;
+      font-size: 16px;
+      color: #e65100;
+    }
+    .alert-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 8px 0;
+      border-bottom: 1px solid rgba(255, 183, 77, 0.3);
+    }
+    .alert-item:last-child { border-bottom: none; }
+    .alert-item a { color: #bf360c; text-decoration: none; font-weight: 500; font-size: 14px; }
+    .alert-item a:hover { text-decoration: underline; }
+
     .content {
       background-color: white;
       padding: 24px;
       border-radius: 0 0 8px 8px;
       box-shadow: 0 2px 4px rgba(0,0,0,0.1);
     }
-    .month-section {
-      margin-bottom: 28px;
-    }
+    .month-section { margin-bottom: 28px; }
     .month-title {
       font-size: 18px;
       font-weight: 600;
@@ -72,31 +115,11 @@
       background-color: #fafafa;
       border-radius: 0 4px 4px 0;
     }
-    .opp-title {
-      font-size: 15px;
-      font-weight: 600;
-      margin-bottom: 6px;
-    }
-    .opp-title a {
-      color: #CC0000;
-      text-decoration: none;
-    }
-    .opp-title a:hover {
-      text-decoration: underline;
-    }
-    .opp-summary {
-      font-size: 13px;
-      color: #555;
-      line-height: 1.5;
-      margin-bottom: 6px;
-    }
-    .opp-meta {
-      font-size: 12px;
-      color: #888;
-    }
-    .opp-meta span {
-      margin-right: 12px;
-    }
+    .opp-title { font-size: 15px; font-weight: 600; margin-bottom: 6px; }
+    .opp-title a { color: #CC0000; text-decoration: none; }
+    .opp-title a:hover { text-decoration: underline; }
+    .opp-summary { font-size: 13px; color: #555; line-height: 1.5; margin-bottom: 6px; }
+    .opp-meta { font-size: 12px; color: #888; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
     .source-badge {
       display: inline-block;
       background-color: #f0f0f0;
@@ -107,6 +130,37 @@
       font-weight: 500;
       text-transform: uppercase;
     }
+    .deadline-badge {
+      display: inline-block;
+      font-size: 11px;
+      padding: 2px 8px;
+      border-radius: 10px;
+      font-weight: 600;
+    }
+    .deadline-urgent {
+      background-color: #ffebee;
+      color: #c62828;
+    }
+    .deadline-soon {
+      background-color: #fff3e0;
+      color: #e65100;
+    }
+    .deadline-ok {
+      background-color: #e8f5e9;
+      color: #2e7d32;
+    }
+    .deadline-past {
+      background-color: #f5f5f5;
+      color: #999;
+      text-decoration: line-through;
+    }
+    .results-count {
+      font-size: 13px;
+      color: #888;
+      padding: 8px 0;
+      border-bottom: 1px solid #eee;
+      margin-bottom: 16px;
+    }
     .footer {
       text-align: center;
       font-size: 12px;
@@ -115,8 +169,12 @@
       padding-top: 16px;
       border-top: 1px solid #eee;
     }
-    .hidden {
-      display: none !important;
+    .hidden { display: none !important; }
+    .no-results {
+      text-align: center;
+      color: #999;
+      padding: 40px;
+      font-size: 14px;
     }
   </style>
 </head>
@@ -126,16 +184,57 @@
     <div class="meta">{{ total_count }} opportunities &bull; Last updated: {{ last_updated }}</div>
   </div>
 
-  <div class="search-bar">
-    <input type="text" id="searchInput" placeholder="Search by title, source, or keyword..." oninput="filterOpportunities()">
+  <div class="filters-bar">
+    <input type="text" id="searchInput" placeholder="Search by title, source, or keyword..." oninput="applyFilters()">
+    <div class="filter-group">
+      <span class="filter-label">Sort:</span>
+      <select id="sortSelect" onchange="applyFilters()">
+        <option value="newest">Newest First</option>
+        <option value="oldest">Oldest First</option>
+        <option value="deadline">Deadline (Soonest)</option>
+        <option value="funding">Funding (Highest)</option>
+      </select>
+    </div>
+    <div class="filter-group">
+      <span class="filter-label">Deadline:</span>
+      <select id="deadlineFilter" onchange="applyFilters()">
+        <option value="all">All</option>
+        <option value="30">Next 30 Days</option>
+        <option value="60">Next 60 Days</option>
+        <option value="active">Active (Not Past)</option>
+        <option value="past">Past Deadline</option>
+      </select>
+    </div>
+    <div class="filter-group">
+      <span class="filter-label">Source:</span>
+      <select id="sourceFilter" onchange="applyFilters()">
+        <option value="all">All Sources</option>
+        {% for src in sources %}
+        <option value="{{ src }}">{{ src | replace('_', ' ') | title }}</option>
+        {% endfor %}
+      </select>
+    </div>
+  </div>
+
+  <!-- Approaching Deadlines Alert -->
+  <div class="alert-section" id="deadlineAlerts">
+    <h2>&#9200; Approaching Deadlines (Next 30 Days)</h2>
+    <div id="alertList"></div>
   </div>
 
   <div class="content" id="content">
+    <div class="results-count" id="resultsCount"></div>
     {% for group in month_groups %}
     <div class="month-section" data-month="{{ group.label }}">
       <div class="month-title">{{ group.label }}</div>
       {% for opp in group.opportunities %}
-      <div class="opportunity" data-searchable="{{ opp.title|lower }} {{ opp.source|lower }} {{ (opp.summary or '')|lower }}">
+      <div class="opportunity"
+           data-searchable="{{ opp.title|lower }} {{ opp.source|lower }} {{ (opp.summary or '')|lower }}"
+           data-deadline="{{ opp.deadline_date or '' }}"
+           data-days="{{ opp.days_until_deadline if opp.days_until_deadline is not none else '' }}"
+           data-source="{{ opp.source }}"
+           data-funding="{{ opp.funding_numeric or 0 }}"
+           data-fetched="{{ opp.fetched_at or '' }}">
         <div class="opp-title">
           <a href="{{ opp.url }}" target="_blank" rel="noopener">{{ opp.title }}</a>
         </div>
@@ -145,16 +244,31 @@
         <div class="opp-meta">
           <span class="source-badge">{{ opp.source | replace('_', ' ') }}</span>
           {% if opp.funding_amount %}
-          <span>{{ opp.funding_amount }}</span>
+          <span>&#128176; {{ opp.funding_amount }}</span>
           {% endif %}
           {% if opp.deadline %}
-          <span>Deadline: {{ opp.deadline }}</span>
+          <span>&#128197; Deadline: {{ opp.deadline }}</span>
+          {% endif %}
+          {% if opp.days_until_deadline is not none %}
+            {% if opp.days_until_deadline < 0 %}
+            <span class="deadline-badge deadline-past">Past deadline</span>
+            {% elif opp.days_until_deadline <= 14 %}
+            <span class="deadline-badge deadline-urgent">{{ opp.days_until_deadline }} days left</span>
+            {% elif opp.days_until_deadline <= 30 %}
+            <span class="deadline-badge deadline-soon">{{ opp.days_until_deadline }} days left</span>
+            {% elif opp.days_until_deadline <= 60 %}
+            <span class="deadline-badge deadline-ok">{{ opp.days_until_deadline }} days left</span>
+            {% endif %}
+          {% endif %}
+          {% if opp.posted_date %}
+          <span>&#128204; Posted: {{ opp.posted_date }}</span>
           {% endif %}
         </div>
       </div>
       {% endfor %}
     </div>
     {% endfor %}
+    <div class="no-results hidden" id="noResults">No opportunities match your filters.</div>
   </div>
 
   <div class="footer">
@@ -163,30 +277,142 @@
   </div>
 
   <script>
-    function filterOpportunities() {
+    function applyFilters() {
       var query = document.getElementById('searchInput').value.toLowerCase();
+      var sort = document.getElementById('sortSelect').value;
+      var deadlineFilter = document.getElementById('deadlineFilter').value;
+      var sourceFilter = document.getElementById('sourceFilter').value;
       var opps = document.querySelectorAll('.opportunity');
       var sections = document.querySelectorAll('.month-section');
+      var now = new Date();
+      var visibleCount = 0;
 
       opps.forEach(function(opp) {
         var text = opp.getAttribute('data-searchable') || '';
-        if (query === '' || text.indexOf(query) !== -1) {
+        var days = opp.getAttribute('data-days');
+        var source = opp.getAttribute('data-source') || '';
+        var show = true;
+
+        // Text search
+        if (query && text.indexOf(query) === -1) show = false;
+
+        // Source filter
+        if (show && sourceFilter !== 'all' && source !== sourceFilter) show = false;
+
+        // Deadline filter
+        if (show && deadlineFilter !== 'all') {
+          if (days === '') {
+            if (deadlineFilter === 'past') show = false;
+            else if (deadlineFilter !== 'all') show = false;
+          } else {
+            var d = parseInt(days);
+            if (deadlineFilter === '30' && (d < 0 || d > 30)) show = false;
+            else if (deadlineFilter === '60' && (d < 0 || d > 60)) show = false;
+            else if (deadlineFilter === 'active' && d < 0) show = false;
+            else if (deadlineFilter === 'past' && d >= 0) show = false;
+          }
+        }
+
+        if (show) {
           opp.classList.remove('hidden');
+          visibleCount++;
         } else {
           opp.classList.add('hidden');
         }
       });
 
-      // Hide month sections with no visible opportunities
-      sections.forEach(function(section) {
-        var visible = section.querySelectorAll('.opportunity:not(.hidden)');
-        if (visible.length === 0) {
-          section.classList.add('hidden');
-        } else {
-          section.classList.remove('hidden');
+      // Sort if not default month grouping
+      if (sort !== 'newest') {
+        var content = document.getElementById('content');
+        var allOpps = Array.from(content.querySelectorAll('.opportunity:not(.hidden)'));
+
+        allOpps.sort(function(a, b) {
+          if (sort === 'oldest') {
+            return (a.getAttribute('data-fetched') || '').localeCompare(b.getAttribute('data-fetched') || '');
+          } else if (sort === 'deadline') {
+            var da = a.getAttribute('data-deadline') || 'z';
+            var db_ = b.getAttribute('data-deadline') || 'z';
+            return da.localeCompare(db_);
+          } else if (sort === 'funding') {
+            var fa = parseFloat(a.getAttribute('data-funding') || '0');
+            var fb = parseFloat(b.getAttribute('data-funding') || '0');
+            return fb - fa;
+          }
+          return 0;
+        });
+
+        // Hide month sections and show flat list
+        sections.forEach(function(s) { s.classList.add('hidden'); });
+
+        // Append sorted opps directly to content
+        allOpps.forEach(function(opp) {
+          content.appendChild(opp);
+        });
+      } else {
+        // Default newest-first: show month sections
+        sections.forEach(function(section) {
+          var visible = section.querySelectorAll('.opportunity:not(.hidden)');
+          if (visible.length === 0) {
+            section.classList.add('hidden');
+          } else {
+            section.classList.remove('hidden');
+            // Re-attach opps to their sections
+            visible.forEach(function(opp) {
+              section.appendChild(opp);
+            });
+          }
+        });
+      }
+
+      // Update results count
+      document.getElementById('resultsCount').textContent =
+        visibleCount + ' of ' + opps.length + ' opportunities shown';
+
+      // Show/hide no results
+      document.getElementById('noResults').classList.toggle('hidden', visibleCount > 0);
+    }
+
+    // Populate deadline alerts on load
+    function populateAlerts() {
+      var opps = document.querySelectorAll('.opportunity');
+      var alerts = [];
+      opps.forEach(function(opp) {
+        var days = opp.getAttribute('data-days');
+        if (days !== '' && parseInt(days) >= 0 && parseInt(days) <= 30) {
+          var title = opp.querySelector('.opp-title a');
+          var deadline = opp.getAttribute('data-deadline');
+          alerts.push({
+            title: title ? title.textContent : 'Unknown',
+            url: title ? title.href : '#',
+            days: parseInt(days),
+            deadline: deadline
+          });
         }
       });
+
+      alerts.sort(function(a, b) { return a.days - b.days; });
+
+      var alertList = document.getElementById('alertList');
+      var alertSection = document.getElementById('deadlineAlerts');
+
+      if (alerts.length === 0) {
+        alertSection.classList.add('hidden');
+        return;
+      }
+
+      alertList.innerHTML = alerts.map(function(a) {
+        var urgency = a.days <= 7 ? 'color:#c62828;font-weight:700' :
+                      a.days <= 14 ? 'color:#e65100;font-weight:600' : 'color:#ef6c00';
+        return '<div class="alert-item">' +
+          '<a href="' + a.url + '" target="_blank">' + a.title + '</a>' +
+          '<span style="' + urgency + '">' + a.days + ' days left (due ' + a.deadline + ')</span>' +
+          '</div>';
+      }).join('');
     }
+
+    // Initialize
+    populateAlerts();
+    applyFilters();
   </script>
 </body>
 </html>

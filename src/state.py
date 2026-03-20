@@ -91,12 +91,48 @@ class StateDB:
                 return True
         return False
 
+    def is_title_similar(self, title: str, threshold: float = 0.80) -> bool:
+        """Check if any stored opportunity has a similar title (cross-source dedup).
+
+        Uses normalized title comparison with SequenceMatcher for fuzzy matching.
+        """
+        import re
+        from difflib import SequenceMatcher
+
+        def normalize_title(t: str) -> str:
+            t = t.lower().strip()
+            t = re.sub(r'[^\w\s]', '', t)  # Remove punctuation
+            t = re.sub(r'\s+', ' ', t)     # Collapse whitespace
+            return t
+
+        norm_new = normalize_title(title)
+        if len(norm_new) < 10:  # Too short to match meaningfully
+            return False
+
+        rows = self.conn.execute("SELECT title FROM seen_opportunities").fetchall()
+        for row in rows:
+            norm_existing = normalize_title(row["title"])
+            # Check SequenceMatcher similarity
+            ratio = SequenceMatcher(None, norm_new, norm_existing).ratio()
+            if ratio >= threshold:
+                logger.debug(f"Cross-source dedup: '{title[:60]}' matches existing (similarity={ratio:.2f})")
+                return True
+            # Also check substring containment (short title inside long title)
+            shorter, longer = sorted([norm_new, norm_existing], key=len)
+            if len(shorter) >= 15 and shorter in longer:
+                logger.debug(f"Cross-source dedup (substring): '{title[:60]}' contained in existing")
+                return True
+        return False
+
     def store_opportunity(self, opp: Opportunity) -> bool:
         """Store an opportunity. Returns False if already exists (by ID or URL)."""
         if self.is_seen(opp.composite_id):
             return False
         if self.is_url_seen(opp.url):
             logger.debug(f"URL-dedup: {opp.title[:60]} (url={opp.url})")
+            return False
+        if self.is_title_similar(opp.title):
+            logger.debug(f"Title-dedup: {opp.title[:60]}")
             return False
         self.conn.execute(
             """INSERT INTO seen_opportunities

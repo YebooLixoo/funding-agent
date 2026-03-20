@@ -55,11 +55,29 @@ class TestKeywordFilter:
 
     def test_ai_only(self, kw_filter: KeywordFilter):
         opp = _make_opp(
+            "Deep Learning for Optimization",
+            "Novel neural network architectures for combinatorial optimization.",
+        )
+        score = kw_filter.score(opp)
+        assert 0.3 <= score < 0.8
+
+    def test_health_without_engineering_rejected(self, kw_filter: KeywordFilter):
+        """Health/medical AI without civil/environmental context is rejected."""
+        opp = _make_opp(
             "Deep Learning for Medical Imaging",
             "Novel neural network architectures for radiology.",
         )
         score = kw_filter.score(opp)
-        assert 0.3 <= score < 0.8
+        assert score == 0.0
+
+    def test_health_with_engineering_accepted(self, kw_filter: KeywordFilter):
+        """Health topic WITH civil/environmental context is accepted."""
+        opp = _make_opp(
+            "AI for Public Health and Air Quality Monitoring",
+            "Machine learning for environmental health monitoring in transportation corridors and infrastructure.",
+        )
+        score = kw_filter.score(opp)
+        assert score > 0.0
 
     def test_no_relevance(self, kw_filter: KeywordFilter):
         opp = _make_opp(

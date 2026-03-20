@@ -32,7 +32,10 @@ NOT RELEVANT — score below 0.3 (MUST exclude):
 - Genomics, proteomics, molecular biology, biochemistry, immunology, oncology, pathology
 - Social sciences, humanities, arts, education research
 - Medical device development or clinical medicine
-- Psychology or cognitive science without engineering application"""
+- Psychology or cognitive science without engineering application
+- Health, mental health, psychology, behavioral health, or clinical research programs
+  (EXCEPTION: environmental health, air quality health impacts, or public health topics directly tied to civil/environmental/transportation infrastructure are relevant)
+- Nursing, pharmacy, dentistry, veterinary programs"""
 
 _USER_TEMPLATE = """Title: {title}
 Description: {description}
