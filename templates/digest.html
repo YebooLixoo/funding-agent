@@ -202,7 +202,74 @@
       {% endif %}
     </div>
 
-    <!-- Section 3: Upcoming Deadlines -->
+    <!-- Section 3: University Internal Opportunities -->
+    <div class="section">
+      <div class="section-title" style="color: #0057B7; border-bottom-color: #0057B7;">University Internal Opportunities</div>
+      {% if university_groups %}
+        {% for source, opps in university_groups.items() %}
+        <div class="source-group">
+          <div class="source-name">{{ source | replace('_', ' ') | title }}</div>
+          {% for opp in opps %}
+          <div class="opportunity" style="border-left-color: #0057B7;">
+            <div class="opp-title">
+              <a href="{{ opp.url }}" style="color: #0057B7;">{{ opp.title }}</a>
+            </div>
+            {% if opp.summary %}
+            <div class="opp-summary">{{ opp.summary }}</div>
+            {% endif %}
+            <div class="opp-meta">
+              {% if opp.funding_amount %}
+              <span>💰 {{ opp.funding_amount }}</span>
+              {% endif %}
+              {% if opp.deadline %}
+              <span>📅 Deadline: {{ opp.deadline }}</span>
+              {% endif %}
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+        {% endfor %}
+      {% else %}
+        <div class="empty-section">No new university internal opportunities this week.</div>
+      {% endif %}
+    </div>
+
+    <!-- Section 4: Coming Soon / Forecasted / TBD -->
+    <div class="section">
+      <div class="section-title" style="color: #E67E22; border-bottom-color: #E67E22;">Coming Soon &amp; Forecasted</div>
+      {% if coming_soon_groups %}
+        {% for source, opps in coming_soon_groups.items() %}
+        <div class="source-group">
+          <div class="source-name">{{ source | replace('_', ' ') | title }}</div>
+          {% for opp in opps %}
+          <div class="opportunity" style="border-left-color: #E67E22;">
+            <div class="opp-title">
+              <a href="{{ opp.url }}" style="color: #E67E22;">{{ opp.title }}</a>
+              <span class="deadline-badge" style="background-color: #E67E22;">Forecasted</span>
+            </div>
+            {% if opp.summary %}
+            <div class="opp-summary">{{ opp.summary }}</div>
+            {% endif %}
+            <div class="opp-meta">
+              {% if opp.funding_amount %}
+              <span>💰 {{ opp.funding_amount }}</span>
+              {% endif %}
+              {% if opp.deadline %}
+              <span>📅 Expected: {{ opp.deadline }}</span>
+              {% else %}
+              <span>📅 Deadline: TBD</span>
+              {% endif %}
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+        {% endfor %}
+      {% else %}
+        <div class="empty-section">No upcoming opportunities announced yet.</div>
+      {% endif %}
+    </div>
+
+    <!-- Section 5: Upcoming Deadlines -->
     <div class="section">
       <div class="section-title">Upcoming Deadlines (Next 30 Days)</div>
       {% if upcoming_deadlines %}

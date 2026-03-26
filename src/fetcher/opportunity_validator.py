@@ -18,51 +18,75 @@ from src.utils import parse_date
 logger = logging.getLogger(__name__)
 
 _SYSTEM_PROMPT = """You are a strict funding opportunity validator for academic researchers.
-Your job is to identify ONLY real, active, currently-open funding opportunities
-(grants, awards, fellowships, RFPs, calls for proposals) that are CURRENTLY
-ACCEPTING APPLICATIONS.
+Your job is to identify real funding opportunities (grants, awards, fellowships,
+RFPs, calls for proposals) in two categories:
+
+1. OPEN opportunities: Currently accepting applications.
+2. COMING SOON opportunities: Announced/described but not yet open for applications.
+   These include programs with ANY of these indicators:
+   - "applications will open soon", "check back in [month]", "next cycle opens [date]"
+   - Status marked as "TBD", "Forecasted", "Anticipated", "Expected", "Planned"
+   - Close/deadline date shown as "TBD", "To Be Determined", or left blank with a future posting
+   - "Pre-announcement", "Under development", "Forthcoming"
+   - A recurring program that ran previously and is expected to reopen
+   - Any language suggesting the opportunity will accept applications in the future
 
 You MUST reject:
-- Programs that exist but are NOT currently accepting applications
-- Past/closed opportunities (deadline already passed)
-- General company/lab pages that describe research areas but have no active call
+- Past/closed opportunities (deadline already passed, no future cycle mentioned)
+- General company/lab pages that describe research areas but have no active or upcoming call
 - Already-funded awards or completed projects
 - Job postings, internships, or hiring pages
 - News articles, blog posts, product announcements
-- Generic program descriptions without a specific open call
-- Pages that say "check back later" or "applications will open soon"
+- Generic program descriptions with no specific open or upcoming call
 
-A valid opportunity MUST have at least one of:
+For OPEN opportunities, at least one of:
 - An explicit application deadline in the future
 - An explicit "applications now open" or "currently accepting" statement
-- A "rolling deadline" or "open until filled" statement"""
+- A "rolling deadline" or "open until filled" statement
+
+For COMING SOON opportunities, at least one of:
+- An anticipated opening date or application cycle mentioned
+- Language indicating the program will accept applications in the future
+- Status shown as TBD, Forecasted, Anticipated, Expected, or similar
+- A deadline date shown as TBD or To Be Determined
+- A recurring program that ran previously and is expected to reopen"""
 
 _PAGE_VALIDATE_TEMPLATE = """Analyze this web page content from "{label}" ({url}).
 
-FIRST: Is this page primarily about active funding opportunities, grants, or awards
-that are CURRENTLY ACCEPTING APPLICATIONS? If the page is a general research homepage,
-news page, or describes programs that are not currently open, return [].
+FIRST: Is this page about funding opportunities, grants, or awards?
+If it is a general research homepage, news page, or unrelated content, return [].
 
-ONLY if there are real, currently-open opportunities, extract each one with:
+Extract opportunities in two categories:
+1. OPEN: Currently accepting applications.
+2. COMING SOON: Announced or described but not yet open. This includes opportunities with
+   status "TBD", "Forecasted", "Anticipated", "Expected", or similar language, as well as
+   deadlines shown as "TBD" or "To Be Determined". These are valuable for early awareness.
+
+IMPORTANT: If the page lists multiple topics/tracks under a SHARED deadline or call
+(e.g., "Spring 2026: Open Now — submission closes May 6"), each topic is a separate
+opportunity that INHERITS the shared deadline. Apply the page-level deadline to each one.
+
+For each opportunity found, extract:
 - title: The specific opportunity/program name
 - description: 1-2 sentence summary of what is funded
-- deadline: Application deadline (ISO YYYY-MM-DD). Use null ONLY if the page
-  explicitly states "rolling deadline" or "open until filled"
-- deadline_status: One of "explicit_date", "rolling", "not_found"
+- deadline: Application deadline (ISO YYYY-MM-DD). Use null for coming_soon or rolling.
+  If a page-level deadline applies to this opportunity, use that date.
+- deadline_status: One of "explicit_date", "rolling", "shared" (inherited from page), "not_found"
 - funding_amount: Dollar amount if mentioned, or null
-- confidence: 0.0-1.0 how confident this is a real, CURRENTLY OPEN opportunity
+- opportunity_status: "open" or "coming_soon"
+- confidence: 0.0-1.0 how confident this is a real opportunity
   - 0.9+: Explicit deadline + clear application instructions
-  - 0.7-0.8: Rolling/open deadline with clear "apply now" language
-  - 0.5-0.6: Program exists but unclear if currently accepting
-  - Below 0.5: General description, likely not an active call
+  - 0.7-0.8: Rolling/open deadline or shared deadline with clear "open now" language
+  - 0.5-0.6: Coming soon with clear future dates/language, or TBD/Forecasted status
+  - Below 0.5: General description, unlikely to be a real call
 
 Today's date: {today}
 
 Page content (truncated):
 {content}
 
-Respond with ONLY a JSON array. If no currently-open opportunities found, return [].
-Example: [{{"title": "...", "description": "...", "deadline": "2026-06-15", "deadline_status": "explicit_date", "funding_amount": "$50K", "confidence": 0.9}}]"""
+Respond with ONLY a JSON array. If no opportunities found, return [].
+Example: [{{"title": "...", "description": "...", "deadline": "2026-06-15", "deadline_status": "explicit_date", "funding_amount": "$50K", "opportunity_status": "open", "confidence": 0.9}}]"""
 
 _CLASSIFY_TEMPLATE = """Analyze this web page from "{label}" ({url}).
 
@@ -72,7 +96,10 @@ STEP 1: Classify this page:
 - "irrelevant": Not related to funding (news, about us, general info, blog)
 
 STEP 2: If "opportunity_page", extract opportunity details with these fields:
-- title, description, deadline (ISO YYYY-MM-DD or null), deadline_status ("explicit_date"|"rolling"|"not_found"), funding_amount (or null), confidence (0.0-1.0)
+- title, description, deadline (ISO YYYY-MM-DD or null), deadline_status ("explicit_date"|"rolling"|"shared"|"not_found"), funding_amount (or null), opportunity_status ("open"|"coming_soon"), confidence (0.0-1.0)
+Note: Use "coming_soon" for opportunities that are announced but not yet accepting applications,
+including those with status "TBD", "Forecasted", "Anticipated", or deadlines shown as "TBD".
+If multiple topics share a page-level deadline, use deadline_status "shared" and apply the deadline to each.
 
 STEP 3: If "landing_page", identify which links on this page likely point to specific funding opportunities or grant programs.
 Here are the links found on this page:
@@ -93,6 +120,18 @@ Respond with ONLY a JSON object:
 If opportunity_page: fill "opportunities" array, leave "funding_links" empty.
 If landing_page: fill "funding_links" with URLs pointing to grant/funding pages, "opportunities" can be empty.
 If irrelevant: both arrays empty."""
+
+_ITEM_SYSTEM_PROMPT = """You are a strict funding opportunity validator for academic researchers.
+Your job is to identify real, currently-open funding opportunities (grants, awards, fellowships,
+RFPs, calls for proposals) that are CURRENTLY ACCEPTING APPLICATIONS.
+
+You MUST reject:
+- Past/closed opportunities (deadline already passed)
+- Forecasted or coming-soon opportunities that are not yet open
+- General company/lab pages that describe research areas but have no active call
+- Already-funded awards or completed projects
+- Job postings, internships, or hiring pages
+- News articles, blog posts, product announcements"""
 
 _ITEM_VALIDATE_TEMPLATE = """Is this a real, currently-open funding opportunity
 (grant, award, RFP, call for proposals) that is CURRENTLY ACCEPTING APPLICATIONS?
@@ -315,7 +354,7 @@ class OpportunityValidator:
                 max_completion_tokens=200,
                 temperature=0.1,
                 messages=[
-                    {"role": "system", "content": _SYSTEM_PROMPT},
+                    {"role": "system", "content": _ITEM_SYSTEM_PROMPT},
                     {"role": "user", "content": prompt},
                 ],
             )
@@ -356,21 +395,25 @@ class OpportunityValidator:
                 )
                 continue
 
+            opp_status = item.get("opportunity_status", "open")
             deadline = parse_date(item.get("deadline") or "")
-            if deadline and deadline < now:
-                logger.debug(
-                    f"Rejected (past deadline): {item.get('title', '')[:60]}"
-                )
-                continue
 
-            # Reject entries with no deadline unless explicitly rolling
-            deadline_status = item.get("deadline_status", "not_found")
-            if not deadline and deadline_status not in ("rolling",):
-                logger.debug(
-                    f"Rejected (no deadline, status={deadline_status}): "
-                    f"{item.get('title', '')[:60]}"
-                )
-                continue
+            if opp_status == "open":
+                # Open opportunities: enforce deadline checks
+                if deadline and deadline < now:
+                    logger.debug(
+                        f"Rejected (past deadline): {item.get('title', '')[:60]}"
+                    )
+                    continue
+
+                deadline_status = item.get("deadline_status", "not_found")
+                if not deadline and deadline_status not in ("rolling",):
+                    logger.debug(
+                        f"Rejected (no deadline, status={deadline_status}): "
+                        f"{item.get('title', '')[:60]}"
+                    )
+                    continue
+            # coming_soon: no deadline required, skip deadline checks
 
             title = item.get("title", "")
             item_hash = hashlib.md5(title.encode()).hexdigest()[:8]
@@ -385,6 +428,7 @@ class OpportunityValidator:
                 deadline=deadline,
                 funding_amount=item.get("funding_amount"),
                 posted_date=now,
+                opportunity_status=opp_status if opp_status in ("open", "coming_soon") else "open",
             )
             opportunities.append(opp)
 

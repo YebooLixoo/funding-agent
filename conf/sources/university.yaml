@@ -1,0 +1,61 @@
+university:
+  sources:
+    - name: utah_research
+      label: "University of Utah Research Funding"
+      url: "https://research.utah.edu/funding/"
+      institution: "University of Utah"
+      relevance: very_high
+
+    - name: utah_internal_grants
+      label: "University of Utah Internal Grants"
+      url: "https://research.utah.edu/funding/internal-grants.php"
+      institution: "University of Utah"
+      relevance: very_high
+
+    - name: utah_ovpri
+      label: "University of Utah OVPRI Seed Grants"
+      url: "https://research.utah.edu/funding/seed-grants.php"
+      institution: "University of Utah"
+      relevance: high
+
+    - name: utah_coe
+      label: "University of Utah College of Engineering"
+      url: "https://www.coe.utah.edu/research/funding-opportunities/"
+      institution: "University of Utah"
+      relevance: high
+
+  # Mapping of institution names to their research funding URLs
+  # Used by the web platform to dynamically fetch for any user's institution
+  institution_urls:
+    "University of Utah":
+      - url: "https://research.utah.edu/funding/"
+        label: "Research Funding"
+      - url: "https://research.utah.edu/funding/internal-grants.php"
+        label: "Internal Grants"
+    "Stanford University":
+      - url: "https://doresearch.stanford.edu/research-funding/find-funding"
+        label: "Research Funding"
+    "MIT":
+      - url: "https://research.mit.edu/research-funding"
+        label: "Research Funding"
+    "UC Berkeley":
+      - url: "https://vcresearch.berkeley.edu/research-policies-compliance/funding-opportunities"
+        label: "Research Funding"
+    "Georgia Tech":
+      - url: "https://research.gatech.edu/funding-opportunities"
+        label: "Research Funding"
+    "University of Michigan":
+      - url: "https://research.umich.edu/research-funding/"
+        label: "Research Funding"
+    "Carnegie Mellon University":
+      - url: "https://www.cmu.edu/research/funding-opportunities.html"
+        label: "Research Funding"
+    "Purdue University":
+      - url: "https://www.purdue.edu/research/funding-and-grant-writing/"
+        label: "Research Funding"
+    "University of Illinois Urbana-Champaign":
+      - url: "https://research.illinois.edu/funding-opportunities"
+        label: "Research Funding"
+    "Texas A&M University":
+      - url: "https://research.tamu.edu/funding/"
+        label: "Research Funding"

@@ -11,11 +11,12 @@ from web.dependencies import get_current_user
 from web.models.fetch_config import UserFetchConfig
 from web.models.user import User
 from web.schemas.fetch_config import FetchConfigResponse, FetchConfigUpdate
+from web.services.university_fetcher import get_university_sources, list_supported_institutions
 
 router = APIRouter(prefix="/fetch", tags=["fetch"])
 
 # Default available sources
-AVAILABLE_SOURCES = ["nsf", "nih", "grants_gov", "web_sources_gov", "web_sources_industry"]
+AVAILABLE_SOURCES = ["nsf", "nih", "grants_gov", "web_sources_gov", "web_sources_industry", "university"]
 
 
 async def _get_or_create_config(db: AsyncSession, user: User) -> UserFetchConfig:
@@ -72,6 +73,19 @@ async def trigger_fetch(
     return {
         "status": "triggered",
         "message": "Fetch triggered (placeholder — background fetch service not yet configured)",
+    }
+
+
+@router.get("/university-sources")
+async def get_user_university_sources(
+    current_user: User = Depends(get_current_user),
+):
+    """Get university funding sources based on the user's institution."""
+    sources = get_university_sources(current_user.institution)
+    return {
+        "institution": current_user.institution,
+        "sources": sources,
+        "supported_institutions": list_supported_institutions(),
     }
 
 

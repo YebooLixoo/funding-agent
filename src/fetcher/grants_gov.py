@@ -122,8 +122,16 @@ class GrantsGovFetcher(BaseFetcher):
                 if post_str > window_end:
                     continue
 
-            # Skip past deadlines
-            if close_date and close_date < now:
+            # Determine opportunity status from API status field
+            api_status = item.get("opportunity_status", "").lower()
+            if api_status == "forecasted":
+                opp_status = "coming_soon"
+            else:
+                opp_status = "open"
+
+            # For open opportunities, skip past deadlines
+            # For forecasted/coming_soon, deadline may be TBD — allow through
+            if opp_status == "open" and close_date and close_date < now:
                 logger.debug(
                     f"Grants.gov: skipping past deadline: {item.get('opportunity_title', '')[:60]}"
                 )
@@ -152,6 +160,7 @@ class GrantsGovFetcher(BaseFetcher):
                 deadline=close_date,
                 posted_date=post_date,
                 funding_amount=funding,
+                opportunity_status=opp_status,
             )
             opportunities.append(opp)
 

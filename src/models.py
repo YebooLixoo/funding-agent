@@ -38,6 +38,7 @@ class Opportunity:
     keywords: list[str] = field(default_factory=list)
     relevance_score: float = 0.0
     summary: str = ""
+    opportunity_status: str = "open"  # "open", "coming_soon", "closed"
 
     @property
     def composite_id(self) -> str:

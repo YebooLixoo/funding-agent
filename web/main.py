@@ -18,6 +18,13 @@ async def lifespan(app: FastAPI):
     # Create tables on startup (dev convenience; use Alembic in production)
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+    # Auto-sync opportunities from internal pipeline DB
+    try:
+        from web.services.seed_opportunities import seed
+        await seed()
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).warning(f"Auto-sync from internal DB skipped: {e}")
     yield
     await engine.dispose()
 

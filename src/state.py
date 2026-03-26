@@ -27,6 +27,7 @@ CREATE TABLE IF NOT EXISTS seen_opportunities (
     funding_amount TEXT,
     keywords TEXT,
     relevance_score REAL DEFAULT 0.0,
+    opportunity_status TEXT DEFAULT 'open',
     status TEXT DEFAULT 'pending_email',
     fetched_at TEXT NOT NULL
 );
@@ -65,6 +66,18 @@ class StateDB:
     def _init_schema(self) -> None:
         self.conn.executescript(_SCHEMA)
         self.conn.commit()
+        self._migrate()
+
+    def _migrate(self) -> None:
+        """Add columns that may not exist in older databases."""
+        cursor = self.conn.execute("PRAGMA table_info(seen_opportunities)")
+        columns = {row[1] for row in cursor.fetchall()}
+        if "opportunity_status" not in columns:
+            self.conn.execute(
+                "ALTER TABLE seen_opportunities ADD COLUMN opportunity_status TEXT DEFAULT 'open'"
+            )
+            self.conn.commit()
+            logger.info("Migrated: added opportunity_status column")
 
     def close(self) -> None:
         self.conn.close()
@@ -137,8 +150,9 @@ class StateDB:
         self.conn.execute(
             """INSERT INTO seen_opportunities
             (composite_id, source, source_type, title, url, description, summary,
-             deadline, posted_date, funding_amount, keywords, relevance_score, status, fetched_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending_email', ?)""",
+             deadline, posted_date, funding_amount, keywords, relevance_score,
+             opportunity_status, status, fetched_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending_email', ?)""",
             (
                 opp.composite_id,
                 opp.source,
@@ -152,6 +166,7 @@ class StateDB:
                 opp.funding_amount,
                 ",".join(opp.keywords),
                 opp.relevance_score,
+                opp.opportunity_status,
                 datetime.now(timezone.utc).isoformat(),
             ),
         )
@@ -176,8 +191,19 @@ class StateDB:
             """SELECT * FROM seen_opportunities
             WHERE deadline IS NOT NULL AND deadline >= ? AND deadline <= ?
                   AND status != 'emailed'
+                  AND opportunity_status != 'coming_soon'
             ORDER BY deadline ASC""",
             (now, future),
+        ).fetchall()
+        return [dict(row) for row in rows]
+
+    def get_coming_soon_opportunities(self) -> list[dict]:
+        """Get coming_soon opportunities not yet emailed."""
+        rows = self.conn.execute(
+            """SELECT * FROM seen_opportunities
+            WHERE opportunity_status = 'coming_soon'
+                  AND status != 'emailed'
+            ORDER BY source_type, source"""
         ).fetchall()
         return [dict(row) for row in rows]
 

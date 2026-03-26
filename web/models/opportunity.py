@@ -26,6 +26,7 @@ class Opportunity(Base):
     funding_amount: Mapped[str | None] = mapped_column(String(256))
     keywords: Mapped[list | None] = mapped_column(JSON)
     summary: Mapped[str | None] = mapped_column(Text)
+    opportunity_status: Mapped[str] = mapped_column(String(32), default="open", server_default="open")
     fetched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     fetched_for_user_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
@@ -50,8 +51,14 @@ class UserOpportunityScore(Base):
     )
     relevance_score: Mapped[float] = mapped_column(Float, default=0.0)
     matched_keywords: Mapped[list | None] = mapped_column(JSON)
+    keyword_score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    profile_score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    behavior_score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    urgency_score: Mapped[float | None] = mapped_column(Float, nullable=True)
     is_bookmarked: Mapped[bool] = mapped_column(Boolean, default=False)
     is_dismissed: Mapped[bool] = mapped_column(Boolean, default=False)
+    view_count: Mapped[int] = mapped_column(default=0, server_default="0")
+    clicked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     scored_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     user = relationship("User", back_populates="opportunity_scores")

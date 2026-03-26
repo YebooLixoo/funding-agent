@@ -147,6 +147,7 @@ class KeywordFilter:
                 keywords=opp.keywords,
                 relevance_score=s,
                 summary=opp.summary,
+                opportunity_status=opp.opportunity_status,
             )
 
             if s >= 0.6:

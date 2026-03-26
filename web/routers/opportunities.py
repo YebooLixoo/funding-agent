@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import uuid
+from datetime import datetime, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import func, select, or_
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import contains_eager
 
 from web.database import get_db
 from web.dependencies import get_current_user
@@ -32,13 +33,18 @@ def _opp_to_response(opp: Opportunity, score: UserOpportunityScore | None = None
         "funding_amount": opp.funding_amount,
         "keywords": opp.keywords,
         "summary": opp.summary,
+        "opportunity_status": opp.opportunity_status,
         "fetched_at": opp.fetched_at,
     }
     if score:
         data["relevance_score"] = score.relevance_score
+        data["keyword_score"] = score.keyword_score
+        data["profile_score"] = score.profile_score
+        data["behavior_score"] = score.behavior_score
+        data["urgency_score"] = score.urgency_score
         data["matched_keywords"] = score.matched_keywords
-        data["is_bookmarked"] = score.is_bookmarked
-        data["is_dismissed"] = score.is_dismissed
+        data["is_bookmarked"] = score.is_bookmarked or False
+        data["is_dismissed"] = score.is_dismissed or False
     return OpportunityResponse(**data)
 
 
@@ -48,6 +54,7 @@ async def list_opportunities(
     page_size: int = Query(20, ge=1, le=100),
     source: Optional[str] = Query(None),
     source_type: Optional[str] = Query(None),
+    opportunity_status: Optional[str] = Query(None, pattern="^(open|coming_soon|closed)$"),
     search: Optional[str] = Query(None),
     min_score: Optional[float] = Query(None, ge=0, le=1),
     sort_by: str = Query("fetched_at", pattern="^(fetched_at|deadline|relevance_score)$"),
@@ -66,6 +73,9 @@ async def list_opportunities(
     if source_type:
         query = query.where(Opportunity.source_type == source_type)
         count_query = count_query.where(Opportunity.source_type == source_type)
+    if opportunity_status:
+        query = query.where(Opportunity.opportunity_status == opportunity_status)
+        count_query = count_query.where(Opportunity.opportunity_status == opportunity_status)
     if search:
         pattern = f"%{search}%"
         search_filter = or_(
@@ -76,18 +86,38 @@ async def list_opportunities(
         query = query.where(search_filter)
         count_query = count_query.where(search_filter)
 
-    # Sorting
-    if sort_by == "fetched_at":
-        order_col = Opportunity.fetched_at
-    elif sort_by == "deadline":
-        order_col = Opportunity.deadline
-    else:
-        order_col = Opportunity.fetched_at  # default; score sorting handled below
+    # Join with user scores when needed for sorting or min_score filtering
+    needs_score_join = sort_by == "relevance_score" or min_score is not None
+    if needs_score_join:
+        query = query.outerjoin(
+            UserOpportunityScore,
+            (UserOpportunityScore.opportunity_id == Opportunity.id)
+            & (UserOpportunityScore.user_id == current_user.id),
+        )
+        count_query = count_query.outerjoin(
+            UserOpportunityScore,
+            (UserOpportunityScore.opportunity_id == Opportunity.id)
+            & (UserOpportunityScore.user_id == current_user.id),
+        )
+        score_col = func.coalesce(UserOpportunityScore.relevance_score, 0.0)
 
-    if sort_order == "desc":
-        query = query.order_by(order_col.desc())
+    # Apply min_score filter in SQL so pagination counts are correct
+    if min_score is not None:
+        query = query.where(score_col >= min_score)
+        count_query = count_query.where(score_col >= min_score)
+
+    # Sorting
+    if sort_by == "relevance_score":
+        if sort_order == "desc":
+            query = query.order_by(score_col.desc())
+        else:
+            query = query.order_by(score_col.asc())
     else:
-        query = query.order_by(order_col.asc())
+        order_col = Opportunity.fetched_at if sort_by == "fetched_at" else Opportunity.deadline
+        if sort_order == "desc":
+            query = query.order_by(order_col.desc())
+        else:
+            query = query.order_by(order_col.asc())
 
     # Count
     total_result = await db.execute(count_query)
@@ -113,13 +143,7 @@ async def list_opportunities(
     else:
         scores = {}
 
-    # Filter by min_score if requested
-    items = []
-    for opp in opportunities:
-        score = scores.get(opp.id)
-        if min_score is not None and (score is None or score.relevance_score < min_score):
-            continue
-        items.append(_opp_to_response(opp, score))
+    items = [_opp_to_response(opp, scores.get(opp.id)) for opp in opportunities]
 
     total_pages = (total + page_size - 1) // page_size
 
@@ -130,6 +154,28 @@ async def list_opportunities(
         page_size=page_size,
         total_pages=total_pages,
     )
+
+
+# NOTE: /bookmarks/list MUST be defined before /{opportunity_id} to avoid route shadowing
+@router.get("/bookmarks/list", response_model=list[OpportunityResponse])
+async def list_bookmarks(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(
+        select(Opportunity, UserOpportunityScore)
+        .join(
+            UserOpportunityScore,
+            UserOpportunityScore.opportunity_id == Opportunity.id,
+        )
+        .where(
+            UserOpportunityScore.user_id == current_user.id,
+            UserOpportunityScore.is_bookmarked.is_(True),
+        )
+        .order_by(UserOpportunityScore.scored_at.desc())
+    )
+    rows = result.all()
+    return [_opp_to_response(opp, score) for opp, score in rows]
 
 
 @router.get("/{opportunity_id}", response_model=OpportunityResponse)
@@ -150,6 +196,20 @@ async def get_opportunity(
         )
     )
     score = score_result.scalar_one_or_none()
+
+    # Track view interaction for recommendation algorithm
+    if score:
+        score.view_count = (score.view_count or 0) + 1
+        score.clicked_at = datetime.now(timezone.utc)
+    else:
+        score = UserOpportunityScore(
+            user_id=current_user.id,
+            opportunity_id=opportunity_id,
+            view_count=1,
+            clicked_at=datetime.now(timezone.utc),
+        )
+        db.add(score)
+
     return _opp_to_response(opp, score)
 
 
@@ -228,29 +288,3 @@ async def dismiss_opportunity(
         )
         db.add(score)
     return {"status": "dismissed"}
-
-
-@router.get("/bookmarks/list", response_model=list[OpportunityResponse])
-async def list_bookmarks(
-    current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
-):
-    result = await db.execute(
-        select(UserOpportunityScore)
-        .where(
-            UserOpportunityScore.user_id == current_user.id,
-            UserOpportunityScore.is_bookmarked.is_(True),
-        )
-        .order_by(UserOpportunityScore.scored_at.desc())
-    )
-    scores = result.scalars().all()
-
-    items = []
-    for score in scores:
-        opp_result = await db.execute(
-            select(Opportunity).where(Opportunity.id == score.opportunity_id)
-        )
-        opp = opp_result.scalar_one_or_none()
-        if opp:
-            items.append(_opp_to_response(opp, score))
-    return items

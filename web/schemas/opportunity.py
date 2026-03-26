@@ -20,10 +20,15 @@ class OpportunityResponse(BaseModel):
     funding_amount: str | None = None
     keywords: list | None = None
     summary: str | None = None
+    opportunity_status: str = "open"
     fetched_at: datetime
 
     # Per-user fields (populated when user is authenticated)
     relevance_score: float | None = None
+    keyword_score: float | None = None
+    profile_score: float | None = None
+    behavior_score: float | None = None
+    urgency_score: float | None = None
     matched_keywords: list | None = None
     is_bookmarked: bool = False
     is_dismissed: bool = False

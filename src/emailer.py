@@ -47,6 +47,8 @@ class Emailer:
         upcoming_deadlines: list[dict],
         date_str: Optional[str] = None,
         history_url: Optional[str] = None,
+        coming_soon_opps: Optional[list[dict]] = None,
+        university_opps: Optional[list[dict]] = None,
     ) -> str:
         """Compose HTML digest from template.
 
@@ -56,6 +58,8 @@ class Emailer:
             upcoming_deadlines: Opportunities with upcoming deadlines.
             date_str: Date string for the subject line.
             history_url: URL to the full opportunity history page.
+            coming_soon_opps: Opportunities announced but not yet open.
+            university_opps: University internal opportunities.
 
         Returns:
             Rendered HTML string.
@@ -63,7 +67,10 @@ class Emailer:
         if date_str is None:
             date_str = datetime.now().strftime("%B %d, %Y")
 
-        total_count = len(government_opps) + len(industry_opps)
+        coming_soon_opps = coming_soon_opps or []
+        university_opps = university_opps or []
+
+        total_count = len(government_opps) + len(industry_opps) + len(university_opps)
 
         # Group government by source
         gov_grouped: dict[str, list[dict]] = {}
@@ -77,12 +84,27 @@ class Emailer:
             source = opp.get("source", "unknown")
             ind_grouped.setdefault(source, []).append(opp)
 
+        # Group university by source
+        uni_grouped: dict[str, list[dict]] = {}
+        for opp in university_opps:
+            source = opp.get("source", "unknown")
+            uni_grouped.setdefault(source, []).append(opp)
+
+        # Group coming soon by source
+        soon_grouped: dict[str, list[dict]] = {}
+        for opp in coming_soon_opps:
+            source = opp.get("source", "unknown")
+            soon_grouped.setdefault(source, []).append(opp)
+
         template = self.jinja_env.get_template("digest.html")
         html = template.render(
             date=date_str,
             total_count=total_count,
             government_groups=gov_grouped,
             industry_groups=ind_grouped,
+            university_groups=uni_grouped,
+            coming_soon_groups=soon_grouped,
+            coming_soon_count=len(coming_soon_opps),
             upcoming_deadlines=upcoming_deadlines,
             deadline_count=len(upcoming_deadlines),
             history_url=history_url,
