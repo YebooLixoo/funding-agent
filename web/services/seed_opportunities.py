@@ -33,17 +33,31 @@ def read_internal_opportunities() -> list[dict]:
     conn = sqlite3.connect(str(SQLITE_PATH))
     conn.row_factory = sqlite3.Row
 
-    # Migrate: add opportunity_status column if missing (older DBs)
+    # Migrate: add missing columns for older DBs
     columns = {row[1] for row in conn.execute("PRAGMA table_info(seen_opportunities)").fetchall()}
-    if "opportunity_status" not in columns:
-        conn.execute("ALTER TABLE seen_opportunities ADD COLUMN opportunity_status TEXT DEFAULT 'open'")
-        conn.commit()
+    migrate_cols = {
+        "opportunity_status": "TEXT DEFAULT 'open'",
+        "deadline_type": "TEXT DEFAULT 'fixed'",
+        "resource_type": "TEXT",
+        "resource_provider": "TEXT",
+        "resource_scale": "TEXT",
+        "allocation_details": "TEXT",
+        "eligibility": "TEXT",
+        "access_url": "TEXT",
+    }
+    for col, col_type in migrate_cols.items():
+        if col not in columns:
+            conn.execute(f"ALTER TABLE seen_opportunities ADD COLUMN {col} {col_type}")
+    conn.commit()
 
     cursor = conn.execute(
         """
         SELECT composite_id, source, title, url, description, summary,
                deadline, posted_date, funding_amount, keywords,
-               relevance_score, source_type, opportunity_status, status, fetched_at
+               relevance_score, source_type, opportunity_status, deadline_type,
+               resource_type, resource_provider, resource_scale,
+               allocation_details, eligibility, access_url,
+               status, fetched_at
         FROM seen_opportunities
         ORDER BY fetched_at DESC
         """
@@ -63,7 +77,7 @@ async def seed(link_to_email: str | None = None):
         return
 
     # Skip opportunities that were filtered out by the internal pipeline
-    rows = [r for r in rows if r.get("status") != "filtered_out"]
+    rows = [r for r in rows if r.get("status") not in ("filtered_out", "excluded")]
 
     print(f"Found {len(rows)} opportunities in internal DB")
     imported = 0
@@ -91,9 +105,15 @@ async def seed(link_to_email: str | None = None):
             )
             existing = result.scalar_one_or_none()
             if existing:
-                # Update link if user_id provided and not yet linked
+                # Update fields that may have changed
                 if user_id and not existing.fetched_for_user_id:
                     existing.fetched_for_user_id = user_id
+                if row.get("deadline_type") and row["deadline_type"] != "fixed":
+                    existing.deadline_type = row["deadline_type"]
+                if row.get("deadline"):
+                    existing.deadline = row["deadline"]
+                if row.get("opportunity_status"):
+                    existing.opportunity_status = row["opportunity_status"]
                 skipped += 1
                 continue
 
@@ -120,6 +140,13 @@ async def seed(link_to_email: str | None = None):
                 keywords=keywords,
                 summary=row.get("summary"),
                 opportunity_status=row.get("opportunity_status", "open"),
+                deadline_type=row.get("deadline_type", "fixed"),
+                resource_type=row.get("resource_type"),
+                resource_provider=row.get("resource_provider"),
+                resource_scale=row.get("resource_scale"),
+                allocation_details=row.get("allocation_details"),
+                eligibility=row.get("eligibility"),
+                access_url=row.get("access_url"),
                 fetched_for_user_id=user_id,
             )
             session.add(opp)

@@ -7,6 +7,11 @@ industry:
       url: "https://www.nvidia.com/en-us/industries/higher-education-research/academic-grant-program/"
       relevance: very_high
 
+    - name: amd
+      label: "AMD University Program AI & HPC Cluster"
+      url: "https://www.amd.com/en/corporate/university-program/ai-hpc-cluster.html"
+      relevance: very_high
+
     - name: google
       label: "Google Research Scholar"
       url: "https://research.google/programs-and-events/research-scholar-program/"

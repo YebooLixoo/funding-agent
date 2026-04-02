@@ -38,7 +38,8 @@ def load_config() -> DictConfig:
     """Load Hydra config from conf/ directory."""
     cfg = OmegaConf.load("conf/config.yaml")
     for extra in ["conf/sources/government.yaml", "conf/sources/industry.yaml",
-                   "conf/sources/university.yaml", "conf/filter.yaml", "conf/email.yaml"]:
+                   "conf/sources/university.yaml", "conf/sources/compute.yaml",
+                   "conf/filter.yaml", "conf/email.yaml"]:
         if Path(extra).exists():
             cfg = OmegaConf.merge(cfg, OmegaConf.load(extra))
     return cfg
@@ -175,6 +176,67 @@ async def fetch_university(
     return opportunities
 
 
+async def fetch_compute(
+    cfg: DictConfig, window_start: datetime, window_end: datetime, model: str
+) -> list[Opportunity]:
+    """Fetch from all compute resource sources in parallel."""
+    compute_cfg = cfg.get("compute", {})
+    sources = []
+    for category in ["government", "industry", "university"]:
+        sources.extend(compute_cfg.get(category, []))
+
+    if not sources:
+        return []
+
+    scraper = WebScraperFetcher(model=model, source_type="compute")
+    tasks = [
+        scraper.fetch_source(
+            name=src["name"],
+            label=src["label"],
+            url=src["url"],
+            window_start=window_start,
+            window_end=window_end,
+        )
+        for src in sources
+    ]
+
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+    await scraper.close()
+
+    opportunities = []
+    for i, result in enumerate(results):
+        if isinstance(result, Exception):
+            logger.error(f"Compute fetch error ({sources[i]['name']}): {result}")
+        else:
+            src = sources[i]
+            for opp in result:
+                enriched = Opportunity(
+                    source=opp.source,
+                    source_id=opp.source_id,
+                    title=opp.title,
+                    description=opp.description,
+                    url=opp.url,
+                    source_type="compute",
+                    deadline=opp.deadline,
+                    posted_date=opp.posted_date,
+                    funding_amount=opp.funding_amount,
+                    keywords=opp.keywords,
+                    relevance_score=opp.relevance_score,
+                    summary=opp.summary,
+                    opportunity_status=opp.opportunity_status,
+                    deadline_type=src.get("deadline_type", opp.deadline_type),
+                    resource_type=src.get("resource_type"),
+                    resource_provider=src.get("resource_provider"),
+                    resource_scale=src.get("resource_scale"),
+                    allocation_details=src.get("allocation_details"),
+                    eligibility=src.get("eligibility"),
+                    access_url=src.get("access_url"),
+                )
+                opportunities.append(enriched)
+
+    return opportunities
+
+
 async def fetch_approaching_deadlines(cfg: DictConfig) -> list[Opportunity]:
     """Fetch opportunities with approaching deadlines from Grants.gov.
 
@@ -219,16 +281,18 @@ async def run_pipeline(cfg: DictConfig) -> None:
     logger.info(f"Fetch window: {window_start.isoformat()} -> {window_end.isoformat()}")
 
     # Step 2: Fetch from all sources in parallel
-    gov_opps, ind_opps, uni_opps = await asyncio.gather(
+    gov_opps, ind_opps, uni_opps, compute_opps = await asyncio.gather(
         fetch_government(cfg, window_start, window_end, model),
         fetch_industry(cfg, window_start, window_end, model),
         fetch_university(cfg, window_start, window_end, model),
+        fetch_compute(cfg, window_start, window_end, model),
     )
 
-    all_opps = gov_opps + ind_opps + uni_opps
+    all_opps = gov_opps + ind_opps + uni_opps + compute_opps
     logger.info(
         f"Total fetched: {len(all_opps)} "
-        f"({len(gov_opps)} gov, {len(ind_opps)} industry, {len(uni_opps)} university)"
+        f"({len(gov_opps)} gov, {len(ind_opps)} industry, "
+        f"{len(uni_opps)} university, {len(compute_opps)} compute)"
     )
 
     # Step 2b: Fetch approaching-deadline opportunities from Grants.gov
@@ -279,6 +343,7 @@ async def run_pipeline(cfg: DictConfig) -> None:
         exclusions=list(filter_cfg.get("exclusions", [])),
         career_keywords=list(filter_cfg.get("career_keywords", [])),
         faculty_keywords=list(filter_cfg.get("faculty_keywords", [])),
+        compute_keywords=list(filter_cfg.get("compute_keywords", [])),
         keyword_threshold=filter_cfg.get("keyword_threshold", 0.3),
     ))
 
@@ -338,6 +403,10 @@ def _generate_digest(cfg: DictConfig, db: StateDB) -> None:
     """Generate and archive digest HTML for the evening email pipeline."""
     email_cfg = cfg.get("email", {})
 
+    # Refresh quarterly opps: if their deadline has passed, update to next
+    # quarter and reset to pending so they reappear as reminders
+    db.refresh_quarterly_deadlines()
+
     pending = db.get_pending_opportunities()
     lookahead = email_cfg.get("deadline_lookahead_days", 30)
     upcoming = db.get_upcoming_deadlines(days=lookahead)
@@ -348,10 +417,12 @@ def _generate_digest(cfg: DictConfig, db: StateDB) -> None:
         return
 
     # Exclude coming_soon from main sections — they get their own dedicated section
+    # Rolling/quarterly stay in their normal source-type sections with inline badges
     open_pending = [o for o in pending if o.get("opportunity_status") != "coming_soon"]
     gov_opps = [o for o in open_pending if o.get("source_type") == "government"]
     ind_opps = [o for o in open_pending if o.get("source_type") == "industry"]
     uni_opps = [o for o in open_pending if o.get("source_type") == "university"]
+    compute_opps_list = [o for o in open_pending if o.get("source_type") == "compute"]
 
     emailer = Emailer(
         smtp_host=email_cfg.get("smtp_host", "smtp.gmail.com"),
@@ -370,6 +441,7 @@ def _generate_digest(cfg: DictConfig, db: StateDB) -> None:
         history_url=history_url or None,
         coming_soon_opps=coming_soon,
         university_opps=uni_opps,
+        compute_opps=compute_opps_list,
     )
 
     # Archive with date-only filename so weekly_email can find it
@@ -377,7 +449,8 @@ def _generate_digest(cfg: DictConfig, db: StateDB) -> None:
     emailer.archive_digest(html, date_str=date_tag)
     logger.info(
         f"Digest pre-generated: {len(pending)} opps, {len(upcoming)} deadlines, "
-        f"{len(coming_soon)} coming soon, {len(uni_opps)} university"
+        f"{len(coming_soon)} coming soon, {len(uni_opps)} university, "
+        f"{len(compute_opps_list)} compute"
     )
 
 

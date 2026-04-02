@@ -3,8 +3,27 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, date
 from typing import Optional
+
+
+# Standard quarter end dates (month, day)
+_QUARTER_ENDS = [(3, 31), (6, 30), (9, 30), (12, 31)]
+
+
+def next_quarter_deadline(from_date: date | None = None) -> str:
+    """Return the next quarter-end date as ISO string (YYYY-MM-DD).
+
+    Standard quarters: Mar 31, Jun 30, Sep 30, Dec 31.
+    """
+    if from_date is None:
+        from_date = date.today()
+    for month, day in _QUARTER_ENDS:
+        qend = date(from_date.year, month, day)
+        if qend >= from_date:
+            return qend.isoformat()
+    # Past Dec 31 this year → next year Q1
+    return date(from_date.year + 1, 3, 31).isoformat()
 
 
 @dataclass(frozen=True)
@@ -39,6 +58,14 @@ class Opportunity:
     relevance_score: float = 0.0
     summary: str = ""
     opportunity_status: str = "open"  # "open", "coming_soon", "closed"
+    deadline_type: str = "fixed"  # "fixed", "rolling", "quarterly", "none"
+    # Compute resource fields (for source_type='compute')
+    resource_type: Optional[str] = None  # gpu, tpu, hpc, cloud_credits, hardware_grant
+    resource_provider: Optional[str] = None  # NSF ACCESS, NVIDIA, AWS, DOE, etc.
+    resource_scale: Optional[str] = None  # small, medium, large, credits
+    allocation_details: Optional[str] = None  # "Up to 30,000 H100 GPU-hours"
+    eligibility: Optional[str] = None  # "Faculty PI", "Any researcher"
+    access_url: Optional[str] = None  # Direct application portal URL
 
     @property
     def composite_id(self) -> str:

@@ -100,6 +100,14 @@ class Summarizer:
                 keywords=opp.keywords,
                 relevance_score=opp.relevance_score,
                 summary=summary,
+                opportunity_status=opp.opportunity_status,
+                deadline_type=opp.deadline_type,
+                resource_type=opp.resource_type,
+                resource_provider=opp.resource_provider,
+                resource_scale=opp.resource_scale,
+                allocation_details=opp.allocation_details,
+                eligibility=opp.eligibility,
+                access_url=opp.access_url,
             )
             results.append(new_opp)
 

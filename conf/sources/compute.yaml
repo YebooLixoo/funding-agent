@@ -1,0 +1,483 @@
+compute:
+  government:
+    # --- NSF ACCESS Tiers (formerly XSEDE) ---
+
+    - name: nsf_access_explore
+      label: "NSF ACCESS Explore Allocation"
+      url: "https://allocations.access-ci.org/opportunities"
+      resource_type: gpu
+      resource_provider: "NSF ACCESS"
+      resource_scale: small
+      allocation_details: "Up to 400,000 credits (~1,500 GPU-hours). Good for benchmarking and preliminary experiments."
+      eligibility: "Any researcher at a US institution"
+      deadline_type: rolling
+      relevance: very_high
+      access_url: "https://allocations.access-ci.org/opportunities"
+
+    - name: nsf_access_discover
+      label: "NSF ACCESS Discover Allocation"
+      url: "https://allocations.access-ci.org/opportunities"
+      resource_type: gpu
+      resource_provider: "NSF ACCESS"
+      resource_scale: medium
+      allocation_details: "Up to 1,500,000 credits (~6,000 GPU-hours). Supports active research projects."
+      eligibility: "PI at US institution with research plan"
+      deadline_type: rolling
+      relevance: very_high
+      access_url: "https://allocations.access-ci.org/opportunities"
+
+    - name: nsf_access_accelerate
+      label: "NSF ACCESS Accelerate Allocation"
+      url: "https://allocations.access-ci.org/opportunities"
+      resource_type: gpu
+      resource_provider: "NSF ACCESS"
+      resource_scale: large
+      allocation_details: "Up to 3,000,000 credits (~12,000 GPU-hours). For sustained research campaigns."
+      eligibility: "PI at US institution with funded project or strong justification"
+      deadline_type: rolling
+      relevance: very_high
+      access_url: "https://allocations.access-ci.org/opportunities"
+
+    - name: nsf_access_maximize
+      label: "NSF ACCESS Maximize Allocation"
+      url: "https://allocations.access-ci.org/opportunities"
+      resource_type: gpu
+      resource_provider: "NSF ACCESS"
+      resource_scale: large
+      allocation_details: "3,000,000+ credits. Largest tier for computationally intensive research. Reviewed quarterly."
+      eligibility: "PI at US institution; requires detailed resource justification and review"
+      deadline_type: quarterly
+      relevance: high
+      access_url: "https://allocations.access-ci.org/opportunities"
+
+    # --- DOE Programs ---
+
+    - name: doe_incite
+      label: "DOE INCITE Program"
+      url: "https://www.doeleadershipcomputing.org/incite-program/"
+      resource_type: hpc
+      resource_provider: "DOE OLCF/ALCF"
+      resource_scale: large
+      allocation_details: "Millions of node-hours on Frontier (AMD MI250X) and Aurora (Intel Max GPUs). Largest open science HPC allocation."
+      eligibility: "Open to researchers worldwide; US and international PIs"
+      deadline_type: fixed
+      relevance: high
+      access_url: "https://www.doeleadershipcomputing.org/incite-program/"
+
+    - name: doe_alcc
+      label: "DOE ALCC Program"
+      url: "https://www.doeleadershipcomputing.org/alcc-program/"
+      resource_type: hpc
+      resource_provider: "DOE OLCF/ALCF/NERSC"
+      resource_scale: large
+      allocation_details: "Mid-scale allocations on Frontier, Aurora, and Perlmutter. 1-year awards for high-risk/high-payoff research."
+      eligibility: "Researchers at US institutions and DOE labs"
+      deadline_type: fixed
+      relevance: high
+      access_url: "https://www.doeleadershipcomputing.org/alcc-program/"
+
+    - name: doe_nersc_ercap
+      label: "DOE NERSC ERCAP Allocation"
+      url: "https://www.nersc.gov/users/accounts/allocations/"
+      resource_type: gpu
+      resource_provider: "NERSC"
+      resource_scale: large
+      allocation_details: "Allocations on Perlmutter (NVIDIA A100 GPUs). Annual ERCAP request cycle for DOE-funded and open science."
+      eligibility: "Researchers with DOE-funded projects; open science proposals also accepted"
+      deadline_type: fixed
+      relevance: high
+      access_url: "https://www.nersc.gov/users/accounts/allocations/ercap/"
+
+    - name: doe_nersc_startup
+      label: "DOE NERSC Startup Allocation"
+      url: "https://www.nersc.gov/users/accounts/allocations/first-allocation/"
+      resource_type: gpu
+      resource_provider: "NERSC"
+      resource_scale: small
+      allocation_details: "Small startup allocation on Perlmutter for new users. Quick approval for code porting and testing."
+      eligibility: "Any researcher new to NERSC with DOE-relevant work"
+      deadline_type: rolling
+      relevance: high
+      access_url: "https://www.nersc.gov/users/accounts/allocations/first-allocation/"
+
+    # --- NAIRR ---
+
+    - name: nairr_pilot
+      label: "National AI Research Resource (NAIRR) Pilot"
+      url: "https://nairrpilot.org/"
+      resource_type: gpu
+      resource_provider: "NSF / NAIRR"
+      resource_scale: medium
+      allocation_details: "Access to GPUs, cloud credits, and datasets across federated resources for AI research."
+      eligibility: "US-based researchers and educators; priority for underserved institutions"
+      deadline_type: rolling
+      relevance: very_high
+      access_url: "https://nairrpilot.org/opportunities"
+
+    - name: nairr_classroom
+      label: "NAIRR Classroom Allocation"
+      url: "https://nairrpilot.org/"
+      resource_type: gpu
+      resource_provider: "NSF / NAIRR"
+      resource_scale: small
+      allocation_details: "Compute resources for AI/ML coursework and educational projects."
+      eligibility: "US-based educators at accredited institutions"
+      deadline_type: rolling
+      relevance: medium
+      access_url: "https://nairrpilot.org/opportunities"
+
+    # --- DOD & NASA ---
+
+    - name: dod_hpc
+      label: "DOD HPC Modernization Program"
+      url: "https://www.hpc.mil/"
+      resource_type: hpc
+      resource_provider: "DOD HPCMP"
+      resource_scale: large
+      allocation_details: "HPC resources for defense-related research. Multiple supercomputers with GPU accelerators."
+      eligibility: "DOD-funded researchers, contractors, and university partners with DOD grants"
+      deadline_type: rolling
+      relevance: medium
+      access_url: "https://www.hpc.mil/index.php/get-an-account"
+
+    - name: dod_frontier_project
+      label: "DOD HPC Frontier Project"
+      url: "https://www.hpc.mil/"
+      resource_type: hpc
+      resource_provider: "DOD HPCMP"
+      resource_scale: large
+      allocation_details: "Large-scale DOD HPC allocations for computationally grand challenge projects."
+      eligibility: "DOD-funded PIs with approved frontier project proposals"
+      deadline_type: fixed
+      relevance: medium
+      access_url: "https://www.hpc.mil/"
+
+    - name: nasa_hec
+      label: "NASA High-End Computing (HEC)"
+      url: "https://www.nas.nasa.gov/hecc/"
+      resource_type: hpc
+      resource_provider: "NASA NAS"
+      resource_scale: large
+      allocation_details: "Pleiades and Aitken supercomputers. GPU and CPU resources for NASA-funded research."
+      eligibility: "NASA-funded researchers and university PIs with NASA grants"
+      deadline_type: rolling
+      relevance: medium
+      access_url: "https://www.nas.nasa.gov/hecc/support/accounts.html"
+
+    - name: nasa_nccs
+      label: "NASA NCCS Discover"
+      url: "https://www.nccs.nasa.gov/"
+      resource_type: hpc
+      resource_provider: "NASA NCCS"
+      resource_scale: large
+      allocation_details: "Discover supercomputer for Earth science, weather, and climate modeling."
+      eligibility: "NASA-funded researchers in Earth science and related fields"
+      deadline_type: rolling
+      relevance: medium
+      access_url: "https://www.nccs.nasa.gov/nccs-users/instructional/account-set-up"
+
+    - name: noaa_rdhpcs
+      label: "NOAA R&D HPC Systems"
+      url: "https://rdhpcs.noaa.gov/"
+      resource_type: hpc
+      resource_provider: "NOAA"
+      resource_scale: large
+      allocation_details: "HPC resources for weather, ocean, and environmental research."
+      eligibility: "NOAA-funded researchers and collaborators"
+      deadline_type: rolling
+      relevance: medium
+      access_url: "https://rdhpcs.noaa.gov/"
+
+  industry:
+    # --- GPU Hardware & Cloud Programs ---
+
+    - name: nvidia_academic_gpu
+      label: "NVIDIA Academic Hardware Grant"
+      url: "https://www.nvidia.com/en-us/industries/higher-education-research/academic-grant-program/"
+      resource_type: hardware_grant
+      resource_provider: "NVIDIA"
+      resource_scale: medium
+      allocation_details: "Hardware grants of NVIDIA GPUs (A100, H100-series) for academic research. Also DGX Cloud credits."
+      eligibility: "Faculty at accredited universities with active research"
+      deadline_type: rolling
+      relevance: very_high
+      access_url: "https://www.nvidia.com/en-us/industries/higher-education-research/academic-grant-program/"
+
+    - name: nvidia_academic_cloud
+      label: "NVIDIA DGX Cloud Academic Program"
+      url: "https://www.nvidia.com/en-us/data-center/dgx-cloud/"
+      resource_type: gpu
+      resource_provider: "NVIDIA"
+      resource_scale: medium
+      allocation_details: "Cloud-based H100 GPU hours through DGX Cloud for AI training and inference research."
+      eligibility: "University researchers; preference for AI/ML projects"
+      deadline_type: rolling
+      relevance: very_high
+      access_url: "https://www.nvidia.com/en-us/industries/higher-education-research/academic-grant-program/"
+
+    - name: google_trc
+      label: "Google TPU Research Cloud (TRC)"
+      url: "https://sites.research.google/trc/about/"
+      resource_type: tpu
+      resource_provider: "Google"
+      resource_scale: medium
+      allocation_details: "Free Cloud TPU v4/v5 access for 30-60 days. Up to 128 TPU cores for ML research."
+      eligibility: "Academic researchers and independent ML researchers worldwide"
+      deadline_type: rolling
+      relevance: very_high
+      access_url: "https://sites.research.google/trc/about/"
+
+    - name: google_cloud_research_credits
+      label: "Google Cloud Research Credits"
+      url: "https://edu.google.com/programs/credits/research/"
+      resource_type: cloud_credits
+      resource_provider: "Google Cloud"
+      resource_scale: credits
+      allocation_details: "Up to $5,000 in Google Cloud credits for research. Covers Compute Engine, Vertex AI, GKE with GPUs."
+      eligibility: "Faculty and PhD students at accredited universities"
+      deadline_type: rolling
+      relevance: very_high
+      access_url: "https://edu.google.com/programs/credits/research/"
+
+    - name: aws_cloud_credit_research
+      label: "AWS Cloud Credit for Research"
+      url: "https://aws.amazon.com/government-education/research-and-technical-computing/cloud-credit-for-research/"
+      resource_type: cloud_credits
+      resource_provider: "AWS"
+      resource_scale: credits
+      allocation_details: "AWS credits for research computing. Covers EC2 GPU instances (P4d, P5), SageMaker, and S3."
+      eligibility: "Researchers at accredited institutions; requires research proposal"
+      deadline_type: rolling
+      relevance: very_high
+      access_url: "https://aws.amazon.com/government-education/research-and-technical-computing/cloud-credit-for-research/"
+
+    - name: microsoft_azure_research
+      label: "Microsoft Azure for Research / AI for Good"
+      url: "https://www.microsoft.com/en-us/research/academic-programs/"
+      resource_type: cloud_credits
+      resource_provider: "Microsoft Azure"
+      resource_scale: credits
+      allocation_details: "Azure credits for AI research. Access to A100/H100 VMs, Azure ML. AI for Good grants up to $25,000 credits."
+      eligibility: "Faculty and researchers at accredited institutions; AI for Good open to nonprofits"
+      deadline_type: rolling
+      relevance: very_high
+      access_url: "https://www.microsoft.com/en-us/research/academic-programs/"
+
+    - name: amd_hpc_cluster
+      label: "AMD University Program AI & HPC Cluster"
+      url: "https://www.amd.com/en/corporate/university-program/ai-hpc-cluster.html"
+      resource_type: gpu
+      resource_provider: "AMD"
+      resource_scale: medium
+      allocation_details: "Access to AMD Instinct MI250X/MI300X GPU clusters for AI and HPC research."
+      eligibility: "Faculty and researchers at accredited universities"
+      deadline_type: rolling
+      relevance: very_high
+      access_url: "https://www.amd.com/en/corporate/university-program/ai-hpc-cluster.html"
+
+    - name: ibm_academic_initiative
+      label: "IBM Academic Initiative"
+      url: "https://www.ibm.com/academic"
+      resource_type: cloud_credits
+      resource_provider: "IBM"
+      resource_scale: credits
+      allocation_details: "Free access to IBM Cloud, Watson, and HPC resources for academic use."
+      eligibility: "Faculty and students at accredited institutions"
+      deadline_type: rolling
+      relevance: medium
+      access_url: "https://www.ibm.com/academic"
+
+    - name: oracle_for_research
+      label: "Oracle for Research (OCI Credits)"
+      url: "https://www.oracle.com/research/"
+      resource_type: cloud_credits
+      resource_provider: "Oracle Cloud"
+      resource_scale: credits
+      allocation_details: "Up to $5,000 in OCI cloud credits. Access to GPU instances (A10, A100) and bare metal compute."
+      eligibility: "Researchers at accredited institutions worldwide"
+      deadline_type: rolling
+      relevance: high
+      access_url: "https://www.oracle.com/research/"
+
+    - name: meta_research_gpu
+      label: "Meta Research GPU Program"
+      url: "https://llama.meta.com/research/"
+      resource_type: gpu
+      resource_provider: "Meta"
+      resource_scale: medium
+      allocation_details: "GPU compute grants for open-source AI research, particularly Llama ecosystem projects."
+      eligibility: "Academic researchers working on open-source AI/ML"
+      deadline_type: rolling
+      relevance: high
+      access_url: "https://llama.meta.com/research/"
+
+    - name: intel_developer_cloud
+      label: "Intel Developer Cloud (IDC)"
+      url: "https://www.intel.com/content/www/us/en/developer/tools/devcloud/overview.html"
+      resource_type: gpu
+      resource_provider: "Intel"
+      resource_scale: small
+      allocation_details: "Free access to Intel Gaudi2/3 accelerators, Max Series GPUs, and Xeon CPUs for development and benchmarking."
+      eligibility: "Developers and researchers; free tier available"
+      deadline_type: rolling
+      relevance: high
+      access_url: "https://www.intel.com/content/www/us/en/developer/tools/devcloud/overview.html"
+
+    - name: cerebras_academic
+      label: "Cerebras Academic Access Program"
+      url: "https://www.cerebras.net/cerebras-academic-access/"
+      resource_type: gpu
+      resource_provider: "Cerebras"
+      resource_scale: medium
+      allocation_details: "Access to Cerebras CS-2/CS-3 wafer-scale engines for AI research. Designed for large model training."
+      eligibility: "Faculty and researchers at accredited universities"
+      deadline_type: rolling
+      relevance: high
+      access_url: "https://www.cerebras.net/cerebras-academic-access/"
+
+    - name: lambda_academic
+      label: "Lambda Labs Academic Program"
+      url: "https://lambdalabs.com/service/gpu-cloud"
+      resource_type: gpu
+      resource_provider: "Lambda Labs"
+      resource_scale: credits
+      allocation_details: "50% academic discount on Lambda Cloud GPU instances (H100, A100). On-demand and reserved."
+      eligibility: "Researchers and students at accredited universities"
+      deadline_type: rolling
+      relevance: high
+      access_url: "https://lambdalabs.com/service/gpu-cloud"
+
+    - name: coreweave_academic
+      label: "CoreWeave Academic Program"
+      url: "https://www.coreweave.com/solutions/research"
+      resource_type: gpu
+      resource_provider: "CoreWeave"
+      resource_scale: credits
+      allocation_details: "Discounted access to H100/H200 GPU clusters for academic AI research."
+      eligibility: "Academic researchers; apply through solutions team"
+      deadline_type: rolling
+      relevance: high
+      access_url: "https://www.coreweave.com/solutions/research"
+
+    - name: nebius_academic
+      label: "Nebius Academic GPU Program"
+      url: "https://nebius.com/gpu"
+      resource_type: gpu
+      resource_provider: "Nebius"
+      resource_scale: credits
+      allocation_details: "Academic credits for H100 GPU cloud instances. Competitive pricing for research workloads."
+      eligibility: "Academic researchers worldwide"
+      deadline_type: rolling
+      relevance: medium
+      access_url: "https://nebius.com/gpu"
+
+    - name: prime_intellect
+      label: "Prime Intellect Compute Credits"
+      url: "https://www.primeintellect.ai/"
+      resource_type: gpu
+      resource_provider: "Prime Intellect"
+      resource_scale: credits
+      allocation_details: "Distributed GPU compute credits for collaborative AI research and open-source model training."
+      eligibility: "Researchers and open-source AI contributors"
+      deadline_type: rolling
+      relevance: medium
+      access_url: "https://www.primeintellect.ai/"
+
+    - name: together_ai_research
+      label: "Together AI Research Cloud"
+      url: "https://www.together.ai/research"
+      resource_type: gpu
+      resource_provider: "Together AI"
+      resource_scale: credits
+      allocation_details: "GPU credits for academic research on open-source AI models. Training and inference credits."
+      eligibility: "Academic researchers working on open-source AI"
+      deadline_type: rolling
+      relevance: medium
+      access_url: "https://www.together.ai/research"
+
+  university:
+    # --- National Supercomputing Centers ---
+
+    - name: tacc
+      label: "Texas Advanced Computing Center (TACC)"
+      url: "https://www.tacc.utexas.edu/"
+      resource_type: hpc
+      resource_provider: "TACC / UT Austin"
+      resource_scale: large
+      allocation_details: "Frontera (top US academic supercomputer), Lonestar6, Vista GPU cluster. Available via ACCESS or direct TACC allocation."
+      eligibility: "US-based academic researchers; ACCESS allocations or TACC Leadership Program"
+      deadline_type: rolling
+      relevance: high
+      access_url: "https://www.tacc.utexas.edu/use-tacc/allocations/"
+
+    - name: psc_bridges2
+      label: "Pittsburgh Supercomputing Center (Bridges-2)"
+      url: "https://www.psc.edu/resources/bridges-2/"
+      resource_type: gpu
+      resource_provider: "PSC"
+      resource_scale: large
+      allocation_details: "Bridges-2 with NVIDIA V100 GPUs, 256 GPU nodes. Available via ACCESS allocations."
+      eligibility: "US-based researchers via NSF ACCESS"
+      deadline_type: rolling
+      relevance: high
+      access_url: "https://www.psc.edu/resources/bridges-2/"
+
+    - name: sdsc_expanse
+      label: "San Diego Supercomputer Center (Expanse)"
+      url: "https://www.sdsc.edu/services/hpc/expanse/"
+      resource_type: gpu
+      resource_provider: "SDSC / UC San Diego"
+      resource_scale: large
+      allocation_details: "Expanse with NVIDIA V100 GPUs. Composable infrastructure for diverse research. Available via ACCESS."
+      eligibility: "US-based researchers via NSF ACCESS"
+      deadline_type: rolling
+      relevance: high
+      access_url: "https://www.sdsc.edu/services/hpc/expanse/"
+
+    - name: osc
+      label: "Ohio Supercomputer Center"
+      url: "https://www.osc.edu/"
+      resource_type: hpc
+      resource_provider: "OSC"
+      resource_scale: medium
+      allocation_details: "Owens and Pitzer clusters with NVIDIA GPUs. Statewide access plus external collaborators."
+      eligibility: "Ohio-based researchers; external collaborators via partnerships"
+      deadline_type: rolling
+      relevance: medium
+      access_url: "https://www.osc.edu/supercomputing/getting-started"
+
+    - name: ncsa_delta
+      label: "NCSA Delta (University of Illinois)"
+      url: "https://www.ncsa.illinois.edu/research/project-highlights/delta/"
+      resource_type: gpu
+      resource_provider: "NCSA / UIUC"
+      resource_scale: large
+      allocation_details: "Delta GPU system with NVIDIA A100 and A40 GPUs. Available via ACCESS allocations."
+      eligibility: "US-based researchers via NSF ACCESS"
+      deadline_type: rolling
+      relevance: high
+      access_url: "https://www.ncsa.illinois.edu/research/project-highlights/delta/"
+
+    - name: purdue_anvil
+      label: "Purdue Anvil"
+      url: "https://www.rcac.purdue.edu/compute/anvil"
+      resource_type: hpc
+      resource_provider: "Purdue / RCAC"
+      resource_scale: large
+      allocation_details: "Anvil supercomputer with AMD CPUs and NVIDIA A100 GPUs. Available via ACCESS."
+      eligibility: "US-based researchers via NSF ACCESS"
+      deadline_type: rolling
+      relevance: high
+      access_url: "https://www.rcac.purdue.edu/compute/anvil"
+
+    - name: institution_hpc
+      label: "Your University HPC Cluster"
+      url: "https://www.chpc.utah.edu/"
+      resource_type: gpu
+      resource_provider: "Institution HPC"
+      resource_scale: medium
+      allocation_details: "Local university HPC cluster. Typically includes GPU nodes (A100, V100) with faculty allocations."
+      eligibility: "Faculty and students at the institution"
+      deadline_type: rolling
+      relevance: very_high
+      access_url: "https://www.chpc.utah.edu/documentation/guides/getting-started.php"

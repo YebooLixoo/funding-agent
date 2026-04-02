@@ -34,6 +34,13 @@ def _opp_to_response(opp: Opportunity, score: UserOpportunityScore | None = None
         "keywords": opp.keywords,
         "summary": opp.summary,
         "opportunity_status": opp.opportunity_status,
+        "deadline_type": getattr(opp, 'deadline_type', 'fixed'),
+        "resource_type": getattr(opp, 'resource_type', None),
+        "resource_provider": getattr(opp, 'resource_provider', None),
+        "resource_scale": getattr(opp, 'resource_scale', None),
+        "allocation_details": getattr(opp, 'allocation_details', None),
+        "eligibility": getattr(opp, 'eligibility', None),
+        "access_url": getattr(opp, 'access_url', None),
         "fetched_at": opp.fetched_at,
     }
     if score:

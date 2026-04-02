@@ -49,6 +49,7 @@ class Emailer:
         history_url: Optional[str] = None,
         coming_soon_opps: Optional[list[dict]] = None,
         university_opps: Optional[list[dict]] = None,
+        compute_opps: Optional[list[dict]] = None,
     ) -> str:
         """Compose HTML digest from template.
 
@@ -69,8 +70,9 @@ class Emailer:
 
         coming_soon_opps = coming_soon_opps or []
         university_opps = university_opps or []
+        compute_opps = compute_opps or []
 
-        total_count = len(government_opps) + len(industry_opps) + len(university_opps)
+        total_count = len(government_opps) + len(industry_opps) + len(university_opps) + len(compute_opps)
 
         # Group government by source
         gov_grouped: dict[str, list[dict]] = {}
@@ -90,6 +92,12 @@ class Emailer:
             source = opp.get("source", "unknown")
             uni_grouped.setdefault(source, []).append(opp)
 
+        # Group compute by source
+        compute_grouped: dict[str, list[dict]] = {}
+        for opp in compute_opps:
+            source = opp.get("source", "unknown")
+            compute_grouped.setdefault(source, []).append(opp)
+
         # Group coming soon by source
         soon_grouped: dict[str, list[dict]] = {}
         for opp in coming_soon_opps:
@@ -103,6 +111,7 @@ class Emailer:
             government_groups=gov_grouped,
             industry_groups=ind_grouped,
             university_groups=uni_grouped,
+            compute_groups=compute_grouped,
             coming_soon_groups=soon_grouped,
             coming_soon_count=len(coming_soon_opps),
             upcoming_deadlines=upcoming_deadlines,

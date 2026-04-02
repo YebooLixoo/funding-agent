@@ -21,6 +21,14 @@ class OpportunityResponse(BaseModel):
     keywords: list | None = None
     summary: str | None = None
     opportunity_status: str = "open"
+    deadline_type: str = "fixed"
+    # Compute resource fields
+    resource_type: str | None = None
+    resource_provider: str | None = None
+    resource_scale: str | None = None
+    allocation_details: str | None = None
+    eligibility: str | None = None
+    access_url: str | None = None
     fetched_at: datetime
 
     # Per-user fields (populated when user is authenticated)

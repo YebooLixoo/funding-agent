@@ -21,6 +21,7 @@ class FilterConfig:
     exclusions: list[str]
     career_keywords: list[str] = field(default_factory=list)
     faculty_keywords: list[str] = field(default_factory=list)
+    compute_keywords: list[str] = field(default_factory=list)
     keyword_threshold: float = 0.3
 
 
@@ -72,6 +73,19 @@ class KeywordFilter:
         self._faculty_patterns = [
             re.compile(re.escape(kw), re.IGNORECASE) for kw in config.faculty_keywords
         ]
+        self._compute_patterns = [
+            re.compile(re.escape(kw), re.IGNORECASE) for kw in config.compute_keywords
+        ]
+
+    def is_excluded(self, opp: Opportunity) -> bool:
+        """Check if an opportunity matches any exclusion pattern."""
+        text = f"{opp.title} {opp.description}"
+        for pat in self._exclusion_patterns:
+            if pat.search(text):
+                return True
+        if self._HEALTH_ADJACENT.search(text) and not self._ENGINEERING_CONTEXT.search(text):
+            return True
+        return False
 
     def score(self, opp: Opportunity) -> float:
         """Compute relevance score for an opportunity.
@@ -111,14 +125,25 @@ class KeywordFilter:
 
         track2 = career_score + faculty_score
 
+        # Track 3: Compute resources
+        compute_count = sum(1 for pat in self._compute_patterns if pat.search(text))
+        compute_score = min(compute_count * 0.3, 0.5)
+
+        # Curated compute sources get a floor score (pre-validated relevance)
+        if hasattr(opp, 'source_type') and opp.source_type == 'compute':
+            compute_score = max(compute_score, 0.4)
+
         # Cross-bonus: career keywords combined with domain or primary
         cross_bonus = 0.0
         if career_count > 0 and domain_count > 0:
             cross_bonus += 0.15
         if career_count > 0 and primary_count > 0:
             cross_bonus += 0.2
+        # Compute + primary (AI compute resources)
+        if compute_count > 0 and primary_count > 0:
+            cross_bonus += 0.15
 
-        total = max(track1, track2) + cross_bonus
+        total = max(track1, track2, compute_score) + cross_bonus
         return min(total, 1.0)
 
     def filter(self, opportunities: list[Opportunity]) -> tuple[list[Opportunity], list[Opportunity]]:
@@ -148,6 +173,13 @@ class KeywordFilter:
                 relevance_score=s,
                 summary=opp.summary,
                 opportunity_status=opp.opportunity_status,
+                deadline_type=opp.deadline_type,
+                resource_type=opp.resource_type,
+                resource_provider=opp.resource_provider,
+                resource_scale=opp.resource_scale,
+                allocation_details=opp.allocation_details,
+                eligibility=opp.eligibility,
+                access_url=opp.access_url,
             )
 
             if s >= 0.6:
@@ -177,6 +209,9 @@ class KeywordFilter:
             if pat.search(text):
                 matched.append(kw)
         for kw, pat in zip(self.config.faculty_keywords, self._faculty_patterns):
+            if pat.search(text):
+                matched.append(kw)
+        for kw, pat in zip(self.config.compute_keywords, self._compute_patterns):
             if pat.search(text):
                 matched.append(kw)
         return matched

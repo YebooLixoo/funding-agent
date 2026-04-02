@@ -146,6 +146,11 @@
           <div class="opportunity">
             <div class="opp-title">
               <a href="{{ opp.url }}">{{ opp.title }}</a>
+              {% if opp.get('deadline_type') == 'quarterly' %}
+              <span class="deadline-badge" style="background-color: #27AE60;">Quarterly Review</span>
+              {% elif opp.get('deadline_type') == 'rolling' %}
+              <span class="deadline-badge" style="background-color: #27AE60;">Rolling</span>
+              {% endif %}
             </div>
             {% if opp.summary %}
             <div class="opp-summary">{{ opp.summary }}</div>
@@ -154,7 +159,11 @@
               {% if opp.funding_amount %}
               <span>💰 {{ opp.funding_amount }}</span>
               {% endif %}
-              {% if opp.deadline %}
+              {% if opp.get('deadline_type') == 'quarterly' and opp.deadline %}
+              <span>📅 Next quarterly review: {{ opp.deadline }}</span>
+              {% elif opp.get('deadline_type') == 'rolling' %}
+              <span>📅 Apply anytime — rolling basis</span>
+              {% elif opp.deadline %}
               <span>📅 Deadline: {{ opp.deadline }}</span>
               {% endif %}
               {% if opp.posted_date %}
@@ -181,6 +190,11 @@
           <div class="opportunity">
             <div class="opp-title">
               <a href="{{ opp.url }}">{{ opp.title }}</a>
+              {% if opp.get('deadline_type') == 'quarterly' %}
+              <span class="deadline-badge" style="background-color: #27AE60;">Quarterly Review</span>
+              {% elif opp.get('deadline_type') == 'rolling' %}
+              <span class="deadline-badge" style="background-color: #27AE60;">Rolling</span>
+              {% endif %}
             </div>
             {% if opp.summary %}
             <div class="opp-summary">{{ opp.summary }}</div>
@@ -189,7 +203,11 @@
               {% if opp.funding_amount %}
               <span>💰 {{ opp.funding_amount }}</span>
               {% endif %}
-              {% if opp.deadline %}
+              {% if opp.get('deadline_type') == 'quarterly' and opp.deadline %}
+              <span>📅 Next quarterly review: {{ opp.deadline }}</span>
+              {% elif opp.get('deadline_type') == 'rolling' %}
+              <span>📅 Apply anytime — rolling basis</span>
+              {% elif opp.deadline %}
               <span>📅 Deadline: {{ opp.deadline }}</span>
               {% endif %}
             </div>
@@ -213,6 +231,11 @@
           <div class="opportunity" style="border-left-color: #0057B7;">
             <div class="opp-title">
               <a href="{{ opp.url }}" style="color: #0057B7;">{{ opp.title }}</a>
+              {% if opp.get('deadline_type') == 'quarterly' %}
+              <span class="deadline-badge" style="background-color: #27AE60;">Quarterly Review</span>
+              {% elif opp.get('deadline_type') == 'rolling' %}
+              <span class="deadline-badge" style="background-color: #27AE60;">Rolling</span>
+              {% endif %}
             </div>
             {% if opp.summary %}
             <div class="opp-summary">{{ opp.summary }}</div>
@@ -221,7 +244,11 @@
               {% if opp.funding_amount %}
               <span>💰 {{ opp.funding_amount }}</span>
               {% endif %}
-              {% if opp.deadline %}
+              {% if opp.get('deadline_type') == 'quarterly' and opp.deadline %}
+              <span>📅 Next quarterly review: {{ opp.deadline }}</span>
+              {% elif opp.get('deadline_type') == 'rolling' %}
+              <span>📅 Apply anytime — rolling basis</span>
+              {% elif opp.deadline %}
               <span>📅 Deadline: {{ opp.deadline }}</span>
               {% endif %}
             </div>
@@ -234,7 +261,53 @@
       {% endif %}
     </div>
 
-    <!-- Section 4: Coming Soon / Forecasted / TBD -->
+    <!-- Section 4: Computing Resources -->
+    <div class="section">
+      <div class="section-title" style="color: #7C3AED; border-bottom-color: #7C3AED;">Computing Resources</div>
+      {% if compute_groups %}
+        {% for source, opps in compute_groups.items() %}
+        <div class="source-group">
+          <div class="source-name">{{ source | replace('_', ' ') | title }}</div>
+          {% for opp in opps %}
+          <div class="opportunity" style="border-left-color: #7C3AED;">
+            <div class="opp-title">
+              <a href="{{ opp.url }}" style="color: #7C3AED;">{{ opp.title }}</a>
+              {% if opp.get('resource_type') %}
+              <span class="deadline-badge" style="background-color: #7C3AED;">{{ opp.resource_type | upper }}</span>
+              {% endif %}
+              {% if opp.get('deadline_type') == 'rolling' %}
+              <span class="deadline-badge" style="background-color: #27AE60;">Rolling</span>
+              {% endif %}
+            </div>
+            {% if opp.get('allocation_details') %}
+            <div class="opp-summary"><strong>Resources:</strong> {{ opp.allocation_details }}</div>
+            {% endif %}
+            {% if opp.summary %}
+            <div class="opp-summary">{{ opp.summary }}</div>
+            {% endif %}
+            <div class="opp-meta">
+              {% if opp.get('eligibility') %}
+              <span>Eligibility: {{ opp.eligibility }}</span>
+              {% endif %}
+              {% if opp.get('deadline_type') == 'rolling' %}
+              <span>Apply anytime</span>
+              {% elif opp.deadline %}
+              <span>Deadline: {{ opp.deadline }}</span>
+              {% endif %}
+              {% if opp.get('access_url') %}
+              <span><a href="{{ opp.access_url }}" style="color: #7C3AED;">Apply &rarr;</a></span>
+              {% endif %}
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+        {% endfor %}
+      {% else %}
+        <div class="empty-section">No new computing resource opportunities this week.</div>
+      {% endif %}
+    </div>
+
+    <!-- Section 5: Coming Soon / Forecasted / TBD -->
     <div class="section">
       <div class="section-title" style="color: #E67E22; border-bottom-color: #E67E22;">Coming Soon &amp; Forecasted</div>
       {% if coming_soon_groups %}

@@ -91,6 +91,8 @@ export default function Opportunities() {
             <option value="">All types</option>
             <option value="government">Government</option>
             <option value="industry">Industry</option>
+            <option value="university">University</option>
+            <option value="compute">Compute Resources</option>
           </select>
           <select
             value={filters.sort_by}
@@ -182,6 +184,16 @@ function OpportunityCard({
                 {opp.source_type}
               </span>
             )}
+            {opp.resource_type && (
+              <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-800">
+                {opp.resource_type.toUpperCase()}
+              </span>
+            )}
+            {(opp.deadline_type === 'rolling' || opp.deadline_type === 'quarterly') && (
+              <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800">
+                {opp.deadline_type === 'quarterly' ? 'Quarterly Review' : 'Rolling'}
+              </span>
+            )}
             {pct != null && (
               <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${scoreColor}`}>
                 {pct}% match
@@ -206,9 +218,23 @@ function OpportunityCard({
             <p className="text-sm text-gray-600 mt-2 line-clamp-2">{opp.summary}</p>
           )}
           <div className="flex flex-wrap gap-4 mt-3 text-xs text-gray-500">
-            {opp.deadline && <span>Deadline: {opp.deadline}</span>}
+            {opp.deadline_type === 'quarterly' && opp.deadline ? (
+              <span>Next quarterly review: {opp.deadline}</span>
+            ) : opp.deadline_type === 'rolling' ? (
+              <span>Rolling — apply anytime</span>
+            ) : opp.deadline ? (
+              <span>Deadline: {opp.deadline}</span>
+            ) : null}
             {opp.funding_amount && <span>Amount: {opp.funding_amount}</span>}
+            {opp.allocation_details && <span>Resources: {opp.allocation_details}</span>}
+            {opp.eligibility && <span>Eligibility: {opp.eligibility}</span>}
             {opp.posted_date && <span>Posted: {opp.posted_date}</span>}
+            {opp.access_url && (
+              <a href={opp.access_url} target="_blank" rel="noopener noreferrer"
+                 className="text-brand-600 hover:underline font-medium">
+                Apply
+              </a>
+            )}
           </div>
           {opp.matched_keywords && opp.matched_keywords.length > 0 && (
             <div className="flex flex-wrap gap-1 mt-2">

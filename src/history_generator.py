@@ -62,6 +62,9 @@ class HistoryGenerator:
                 opp["days_until_deadline"] = None
                 opp["deadline_date"] = ""
 
+            # Ensure deadline_type has a safe default
+            opp.setdefault("deadline_type", "fixed")
+
             # Parse funding amount as numeric for sorting
             opp["funding_numeric"] = self._parse_funding_amount(opp.get("funding_amount", ""))
 

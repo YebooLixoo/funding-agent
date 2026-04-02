@@ -8,7 +8,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
 
-from src.models import Opportunity
+from src.models import Opportunity, next_quarter_deadline
 from src.utils import normalize_url
 
 logger = logging.getLogger(__name__)
@@ -28,6 +28,13 @@ CREATE TABLE IF NOT EXISTS seen_opportunities (
     keywords TEXT,
     relevance_score REAL DEFAULT 0.0,
     opportunity_status TEXT DEFAULT 'open',
+    deadline_type TEXT DEFAULT 'fixed',
+    resource_type TEXT,
+    resource_provider TEXT,
+    resource_scale TEXT,
+    allocation_details TEXT,
+    eligibility TEXT,
+    access_url TEXT,
     status TEXT DEFAULT 'pending_email',
     fetched_at TEXT NOT NULL
 );
@@ -78,6 +85,21 @@ class StateDB:
             )
             self.conn.commit()
             logger.info("Migrated: added opportunity_status column")
+        if "deadline_type" not in columns:
+            self.conn.execute(
+                "ALTER TABLE seen_opportunities ADD COLUMN deadline_type TEXT DEFAULT 'fixed'"
+            )
+            self.conn.commit()
+            logger.info("Migrated: added deadline_type column")
+        # Compute resource fields
+        for col in ("resource_type", "resource_provider", "resource_scale",
+                     "allocation_details", "eligibility", "access_url"):
+            if col not in columns:
+                self.conn.execute(
+                    f"ALTER TABLE seen_opportunities ADD COLUMN {col} TEXT"
+                )
+                self.conn.commit()
+                logger.info(f"Migrated: added {col} column")
 
     def close(self) -> None:
         self.conn.close()
@@ -151,8 +173,11 @@ class StateDB:
             """INSERT INTO seen_opportunities
             (composite_id, source, source_type, title, url, description, summary,
              deadline, posted_date, funding_amount, keywords, relevance_score,
-             opportunity_status, status, fetched_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending_email', ?)""",
+             opportunity_status, deadline_type,
+             resource_type, resource_provider, resource_scale,
+             allocation_details, eligibility, access_url,
+             status, fetched_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending_email', ?)""",
             (
                 opp.composite_id,
                 opp.source,
@@ -167,6 +192,13 @@ class StateDB:
                 ",".join(opp.keywords),
                 opp.relevance_score,
                 opp.opportunity_status,
+                opp.deadline_type,
+                opp.resource_type,
+                opp.resource_provider,
+                opp.resource_scale,
+                opp.allocation_details,
+                opp.eligibility,
+                opp.access_url,
                 datetime.now(timezone.utc).isoformat(),
             ),
         )
@@ -190,7 +222,7 @@ class StateDB:
         rows = self.conn.execute(
             """SELECT * FROM seen_opportunities
             WHERE deadline IS NOT NULL AND deadline >= ? AND deadline <= ?
-                  AND status != 'emailed'
+                  AND status NOT IN ('emailed', 'excluded')
                   AND opportunity_status != 'coming_soon'
             ORDER BY deadline ASC""",
             (now, future),
@@ -202,10 +234,62 @@ class StateDB:
         rows = self.conn.execute(
             """SELECT * FROM seen_opportunities
             WHERE opportunity_status = 'coming_soon'
-                  AND status != 'emailed'
+                  AND status NOT IN ('emailed', 'excluded')
             ORDER BY source_type, source"""
         ).fetchall()
         return [dict(row) for row in rows]
+
+    def get_rolling_opportunities(self) -> list[dict]:
+        """Get open rolling/quarterly deadline opportunities not yet emailed."""
+        rows = self.conn.execute(
+            """SELECT * FROM seen_opportunities
+            WHERE deadline_type IN ('rolling', 'quarterly')
+                  AND opportunity_status = 'open'
+                  AND status NOT IN ('emailed', 'excluded')
+            ORDER BY source_type, source"""
+        ).fetchall()
+        return [dict(row) for row in rows]
+
+    def refresh_quarterly_deadlines(self) -> int:
+        """Refresh quarterly opportunities for the new cycle.
+
+        When a quarterly opportunity's deadline has passed, update its deadline
+        to the next quarter end and reset status to 'pending_email' so it
+        reappears in the digest as a reminder.
+
+        Returns count of refreshed opportunities.
+        """
+        now = datetime.now(timezone.utc).isoformat()
+        next_q = next_quarter_deadline()
+
+        # Find quarterly opps whose deadline has passed (or was never set)
+        rows = self.conn.execute(
+            """SELECT composite_id, deadline FROM seen_opportunities
+            WHERE deadline_type = 'quarterly'
+                  AND opportunity_status = 'open'
+                  AND (deadline IS NULL OR deadline < ?)""",
+            (now,),
+        ).fetchall()
+
+        if not rows:
+            return 0
+
+        count = 0
+        for row in rows:
+            self.conn.execute(
+                """UPDATE seen_opportunities
+                SET deadline = ?, status = 'pending_email'
+                WHERE composite_id = ?""",
+                (next_q, row["composite_id"]),
+            )
+            count += 1
+
+        self.conn.commit()
+        if count:
+            logger.info(
+                f"Refreshed {count} quarterly opportunities: next deadline {next_q}"
+            )
+        return count
 
     def get_emailed_opportunities(self) -> list[dict]:
         """Get all opportunities that have been emailed, newest first."""
@@ -223,10 +307,16 @@ class StateDB:
         self.conn.commit()
 
     def cleanup_old(self, days: int = 90) -> int:
-        """Remove entries older than N days. Returns count deleted."""
+        """Remove entries older than N days. Returns count deleted.
+
+        Rolling/quarterly opportunities are preserved regardless of age.
+        """
         cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
         cursor = self.conn.execute(
-            "DELETE FROM seen_opportunities WHERE fetched_at < ?", (cutoff,)
+            """DELETE FROM seen_opportunities
+            WHERE fetched_at < ?
+                  AND deadline_type NOT IN ('rolling', 'quarterly')""",
+            (cutoff,),
         )
         self.conn.commit()
         return cursor.rowcount

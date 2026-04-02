@@ -203,6 +203,7 @@
         <option value="60">Next 60 Days</option>
         <option value="active">Active (Not Past)</option>
         <option value="past">Past Deadline</option>
+        <option value="rolling">Rolling / Quarterly</option>
       </select>
     </div>
     <div class="filter-group">
@@ -228,10 +229,11 @@
     <div class="month-section" data-month="{{ group.label }}">
       <div class="month-title">{{ group.label }}</div>
       {% for opp in group.opportunities %}
-      <div class="opportunity"
-           data-searchable="{{ opp.title|lower }} {{ opp.source|lower }} {{ (opp.summary or '')|lower }}"
+      <div class="opportunity"{% if opp.source_type == 'compute' %} style="border-left-color: #7C3AED;"{% endif %}
+           data-searchable="{{ opp.title|lower }} {{ opp.source|lower }} {{ (opp.summary or '')|lower }} {{ (opp.resource_type or '')|lower }}"
            data-deadline="{{ opp.deadline_date or '' }}"
            data-days="{{ opp.days_until_deadline if opp.days_until_deadline is not none else '' }}"
+           data-deadline-type="{{ opp.deadline_type or 'fixed' }}"
            data-source="{{ opp.source }}"
            data-funding="{{ opp.funding_numeric or 0 }}"
            data-fetched="{{ opp.fetched_at or '' }}">
@@ -243,13 +245,33 @@
         {% endif %}
         <div class="opp-meta">
           <span class="source-badge">{{ opp.source | replace('_', ' ') }}</span>
+          {% if opp.source_type == 'compute' and opp.resource_type %}
+          <span class="source-badge" style="background-color: #ede9fe; color: #7C3AED;">{{ opp.resource_type | upper }}</span>
+          {% endif %}
+          {% if opp.allocation_details %}
+          <span>{{ opp.allocation_details }}</span>
+          {% endif %}
           {% if opp.funding_amount %}
           <span>&#128176; {{ opp.funding_amount }}</span>
+          {% endif %}
+          {% if opp.eligibility %}
+          <span>Eligibility: {{ opp.eligibility }}</span>
           {% endif %}
           {% if opp.deadline %}
           <span>&#128197; Deadline: {{ opp.deadline }}</span>
           {% endif %}
-          {% if opp.days_until_deadline is not none %}
+          {% if opp.access_url %}
+          <span><a href="{{ opp.access_url }}" target="_blank" rel="noopener" style="color: #7C3AED; font-weight: 500;">Apply &rarr;</a></span>
+          {% endif %}
+          {% if opp.deadline_type in ['rolling', 'quarterly'] %}
+            {% if opp.deadline_type == 'quarterly' and opp.deadline %}
+            <span class="deadline-badge" style="background-color: #e8f5e9; color: #2e7d32;">Quarterly Review — Next: {{ opp.deadline }}</span>
+            {% elif opp.deadline_type == 'quarterly' %}
+            <span class="deadline-badge" style="background-color: #e8f5e9; color: #2e7d32;">Quarterly Review</span>
+            {% else %}
+            <span class="deadline-badge" style="background-color: #e8f5e9; color: #2e7d32;">Rolling Deadline</span>
+            {% endif %}
+          {% elif opp.days_until_deadline is not none %}
             {% if opp.days_until_deadline < 0 %}
             <span class="deadline-badge deadline-past">Past deadline</span>
             {% elif opp.days_until_deadline <= 14 %}
@@ -301,9 +323,18 @@
 
         // Deadline filter
         if (show && deadlineFilter !== 'all') {
-          if (days === '') {
-            if (deadlineFilter === 'past') show = false;
-            else if (deadlineFilter !== 'all') show = false;
+          var deadlineType = opp.getAttribute('data-deadline-type') || 'fixed';
+          if (deadlineFilter === 'rolling') {
+            if (deadlineType !== 'rolling' && deadlineType !== 'quarterly') show = false;
+          } else if (days === '') {
+            if (deadlineType === 'rolling' || deadlineType === 'quarterly') {
+              // Rolling/quarterly with no days: only show for 'active' or 'all'
+              if (deadlineFilter === 'past') show = false;
+              else if (deadlineFilter === '30' || deadlineFilter === '60') show = false;
+            } else {
+              if (deadlineFilter === 'past') show = false;
+              else if (deadlineFilter !== 'all') show = false;
+            }
           } else {
             var d = parseInt(days);
             if (deadlineFilter === '30' && (d < 0 || d > 30)) show = false;

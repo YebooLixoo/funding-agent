@@ -55,6 +55,7 @@ async def build_filter_config(db: AsyncSession, user_id) -> tuple[FilterConfig, 
     domain = []
     career = []
     faculty = []
+    compute = []
     exclusions = []
     weights_map: dict[str, float] = {}
 
@@ -70,6 +71,8 @@ async def build_filter_config(db: AsyncSession, user_id) -> tuple[FilterConfig, 
             faculty.append(kw.keyword)
         elif kw.category == "exclusion":
             exclusions.append(kw.keyword)
+        elif kw.category == "compute":
+            compute.append(kw.keyword)
         elif kw.category == "custom":
             primary.append(kw.keyword)
 
@@ -78,6 +81,7 @@ async def build_filter_config(db: AsyncSession, user_id) -> tuple[FilterConfig, 
         domain_keywords=domain,
         career_keywords=career,
         faculty_keywords=faculty,
+        compute_keywords=compute,
         exclusions=exclusions,
     )
     return config, weights_map
@@ -224,8 +228,24 @@ def _compute_urgency_score(opp: Opportunity) -> float:
     now = datetime.now(timezone.utc)
     score = 0.0
 
+    # Rolling/quarterly: base urgency + deadline proximity if next review date is set
+    if getattr(opp, 'deadline_type', 'fixed') in ('rolling', 'quarterly'):
+        score += 0.35
+        # Quarterly with computed next review date: add proximity boost
+        if getattr(opp, 'deadline_type', 'fixed') == 'quarterly' and opp.deadline:
+            try:
+                deadline_dt = datetime.fromisoformat(opp.deadline)
+                if deadline_dt.tzinfo is None:
+                    deadline_dt = deadline_dt.replace(tzinfo=timezone.utc)
+                days_until = (deadline_dt - now).days
+                if 0 <= days_until <= 14:
+                    score += 0.4  # Quarter review approaching
+                elif 14 < days_until <= 30:
+                    score += 0.2
+            except (ValueError, TypeError):
+                pass
     # Deadline urgency: closer deadline = higher urgency
-    if opp.deadline:
+    elif opp.deadline:
         try:
             deadline_dt = datetime.fromisoformat(opp.deadline)
             if deadline_dt.tzinfo is None:
@@ -276,6 +296,12 @@ def _to_internal_opp(opp: Opportunity) -> InternalOpportunity:
         source_type=opp.source_type or "government",
         summary=opp.summary or "",
         opportunity_status=opp.opportunity_status or "open",
+        resource_type=getattr(opp, 'resource_type', None),
+        resource_provider=getattr(opp, 'resource_provider', None),
+        resource_scale=getattr(opp, 'resource_scale', None),
+        allocation_details=getattr(opp, 'allocation_details', None),
+        eligibility=getattr(opp, 'eligibility', None),
+        access_url=getattr(opp, 'access_url', None),
     )
 
 
@@ -287,6 +313,38 @@ async def score_opportunity_for_user(
     kf = KeywordFilter(config)
 
     internal_opp = _to_internal_opp(opportunity)
+
+    # Hard gate: if exclusion pattern matches, force score to 0.0
+    if kf.is_excluded(internal_opp):
+        result = await db.execute(
+            select(UserOpportunityScore).where(
+                UserOpportunityScore.user_id == user_id,
+                UserOpportunityScore.opportunity_id == opportunity.id,
+            )
+        )
+        existing = result.scalar_one_or_none()
+        if existing:
+            existing.relevance_score = 0.0
+            existing.keyword_score = 0.0
+            existing.profile_score = 0.0
+            existing.behavior_score = 0.0
+            existing.urgency_score = 0.0
+            existing.matched_keywords = []
+            return existing
+        excluded_score = UserOpportunityScore(
+            user_id=user_id,
+            opportunity_id=opportunity.id,
+            relevance_score=0.0,
+            keyword_score=0.0,
+            profile_score=0.0,
+            behavior_score=0.0,
+            urgency_score=0.0,
+            matched_keywords=[],
+        )
+        db.add(excluded_score)
+        await db.flush()
+        return excluded_score
+
     matched = kf.extract_matching_keywords(internal_opp)
 
     # Signal 1: Keyword

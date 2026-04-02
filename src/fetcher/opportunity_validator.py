@@ -12,7 +12,7 @@ import logging
 from datetime import datetime, timezone
 from typing import Optional
 
-from src.models import Opportunity
+from src.models import Opportunity, next_quarter_deadline
 from src.utils import parse_date
 
 logger = logging.getLogger(__name__)
@@ -69,9 +69,15 @@ opportunity that INHERITS the shared deadline. Apply the page-level deadline to 
 For each opportunity found, extract:
 - title: The specific opportunity/program name
 - description: 1-2 sentence summary of what is funded
-- deadline: Application deadline (ISO YYYY-MM-DD). Use null for coming_soon or rolling.
+- deadline: Application deadline (ISO YYYY-MM-DD). Use null for coming_soon or rolling/quarterly.
   If a page-level deadline applies to this opportunity, use that date.
-- deadline_status: One of "explicit_date", "rolling", "shared" (inherited from page), "not_found"
+  For quarterly programs: if the next specific review date is stated, use that date.
+- deadline_status: One of "explicit_date", "rolling", "quarterly", "shared" (inherited from page), "not_found"
+  Use "quarterly" when the program reviews proposals on a quarterly cycle (e.g., "reviewed every quarter", "quarterly review cycles", "quarterly allocations").
+  Use "rolling" when applications are accepted on an ongoing basis with no fixed cycle.
+- review_cycle_info: (optional) For rolling/quarterly programs, any details about the review schedule
+  (e.g., "reviewed quarterly in March, June, September, December" or "proposals accepted year-round").
+  Use null if not applicable or not mentioned.
 - funding_amount: Dollar amount if mentioned, or null
 - opportunity_status: "open" or "coming_soon"
 - confidence: 0.0-1.0 how confident this is a real opportunity
@@ -86,7 +92,7 @@ Page content (truncated):
 {content}
 
 Respond with ONLY a JSON array. If no opportunities found, return [].
-Example: [{{"title": "...", "description": "...", "deadline": "2026-06-15", "deadline_status": "explicit_date", "funding_amount": "$50K", "opportunity_status": "open", "confidence": 0.9}}]"""
+Example: [{{"title": "...", "description": "...", "deadline": "2026-06-15", "deadline_status": "explicit_date", "review_cycle_info": null, "funding_amount": "$50K", "opportunity_status": "open", "confidence": 0.9}}]"""
 
 _CLASSIFY_TEMPLATE = """Analyze this web page from "{label}" ({url}).
 
@@ -398,6 +404,8 @@ class OpportunityValidator:
             opp_status = item.get("opportunity_status", "open")
             deadline = parse_date(item.get("deadline") or "")
 
+            deadline_status = item.get("deadline_status", "not_found")
+
             if opp_status == "open":
                 # Open opportunities: enforce deadline checks
                 if deadline and deadline < now:
@@ -406,8 +414,7 @@ class OpportunityValidator:
                     )
                     continue
 
-                deadline_status = item.get("deadline_status", "not_found")
-                if not deadline and deadline_status not in ("rolling",):
+                if not deadline and deadline_status not in ("rolling", "quarterly"):
                     logger.debug(
                         f"Rejected (no deadline, status={deadline_status}): "
                         f"{item.get('title', '')[:60]}"
@@ -417,6 +424,23 @@ class OpportunityValidator:
 
             title = item.get("title", "")
             item_hash = hashlib.md5(title.encode()).hexdigest()[:8]
+
+            # Map LLM deadline_status to persistent deadline_type
+            deadline_type_map = {
+                "explicit_date": "fixed",
+                "shared": "fixed",
+                "rolling": "rolling",
+                "quarterly": "quarterly",
+                "not_found": "none",
+            }
+            deadline_type = deadline_type_map.get(deadline_status, "none")
+
+            # For quarterly programs without an explicit deadline,
+            # auto-compute the next quarter-end date so it shows up
+            # in deadline views and notifications.
+            if deadline_type == "quarterly" and not deadline:
+                next_q = next_quarter_deadline()
+                deadline = parse_date(next_q)
 
             opp = Opportunity(
                 source=source_name,
@@ -429,6 +453,7 @@ class OpportunityValidator:
                 funding_amount=item.get("funding_amount"),
                 posted_date=now,
                 opportunity_status=opp_status if opp_status in ("open", "coming_soon") else "open",
+                deadline_type=deadline_type,
             )
             opportunities.append(opp)
 

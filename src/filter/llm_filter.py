@@ -30,7 +30,7 @@ NOT RELEVANT — score below 0.3 (MUST exclude):
 - Pure biology, neuroscience, or biomedical research (e.g., BRAIN Initiative, cell atlas, neural circuits)
 - Clinical trials, drug discovery, pharmaceutical research
 - Genomics, proteomics, molecular biology, biochemistry, immunology, oncology, pathology
-- Social sciences, humanities, arts, education research
+- Social sciences, humanities, arts, education research (including music, performing arts, visual arts, fine arts, film/media production, theater, dance, creative writing, literary programs)
 - Medical device development or clinical medicine
 - Psychology or cognitive science without engineering application
 - Health, mental health, psychology, behavioral health, or clinical research programs
@@ -148,6 +148,14 @@ class LLMFilter:
                     keywords=opp.keywords,
                     relevance_score=score,
                     summary=reason,
+                    opportunity_status=opp.opportunity_status,
+                    deadline_type=opp.deadline_type,
+                    resource_type=opp.resource_type,
+                    resource_provider=opp.resource_provider,
+                    resource_scale=opp.resource_scale,
+                    allocation_details=opp.allocation_details,
+                    eligibility=opp.eligibility,
+                    access_url=opp.access_url,
                 )
                 accepted.append(accepted_opp)
 

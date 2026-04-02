@@ -6,7 +6,9 @@ const SOURCE_LABELS: Record<string, string> = {
   nih: 'NIH (National Institutes of Health)',
   grants_gov: 'Grants.gov',
   web_sources_gov: 'Government Websites (DOE, USDOT, etc.)',
-  web_sources_industry: 'Industry (NVIDIA, Google, etc.)',
+  web_sources_industry: 'Industry (NVIDIA, AMD, Google, etc.)',
+  web_sources_university: 'University Internal Funding',
+  compute: 'Computing Resources (GPU/HPC/Cloud)',
 }
 
 export default function FetchSettings() {
