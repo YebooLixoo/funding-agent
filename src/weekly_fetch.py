@@ -26,6 +26,7 @@ from src.fetcher.web_scraper import WebScraperFetcher
 from src.filter.keyword_filter import FilterConfig, KeywordFilter
 from src.filter.llm_filter import LLMFilter
 from src.models import Opportunity
+from src.history_generator import HistoryGenerator
 from src.state import StateDB
 from src.summarizer import Summarizer
 from src.utils import last_thursday_noon_mt, now_mt, setup_logging
@@ -316,6 +317,14 @@ async def run_pipeline(cfg: DictConfig) -> None:
 
     # Step 8: Generate digest HTML for evening email
     _generate_digest(cfg, db)
+
+    # Step 9: Regenerate history page so it's current when digest links to it
+    try:
+        history_output_dir = cfg.get("email", {}).get("history_output_dir", "outputs/history")
+        history_gen = HistoryGenerator(output_dir=history_output_dir)
+        history_gen.generate(db)
+    except Exception:
+        logger.exception("History page generation failed (non-fatal)")
 
     # Cleanup old entries
     cleaned = db.cleanup_old(days=cfg.project.get("cleanup_days", 90))
