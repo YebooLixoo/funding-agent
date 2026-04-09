@@ -2,15 +2,7 @@ industry:
   sources:
     # --- Verified funding program pages ---
 
-    - name: nvidia
-      label: "NVIDIA Academic Hardware Grant"
-      url: "https://www.nvidia.com/en-us/industries/higher-education-research/academic-grant-program/"
-      relevance: very_high
-
-    - name: amd
-      label: "AMD University Program AI & HPC Cluster"
-      url: "https://www.amd.com/en/corporate/university-program/ai-hpc-cluster.html"
-      relevance: very_high
+    # nvidia and amd moved to conf/sources/compute.yaml (richer metadata)
 
     - name: google
       label: "Google Research Scholar"
