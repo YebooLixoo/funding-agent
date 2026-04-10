@@ -39,7 +39,7 @@ class GrantsGovFetcher(BaseFetcher):
 
     async def fetch(
         self,
-        window_start: datetime,
+        window_start: Optional[datetime],
         window_end: datetime,
         keywords: Optional[list[str]] = None,
     ) -> list[Opportunity]:
@@ -56,7 +56,7 @@ class GrantsGovFetcher(BaseFetcher):
         results: list[Opportunity] = []
         seen_ids: set[str] = set()
 
-        window_start_str = format_date_iso(window_start)
+        window_start_str = format_date_iso(window_start) if window_start else None
         window_end_str = format_date_iso(window_end)
 
         for kw in keywords:
@@ -73,7 +73,7 @@ class GrantsGovFetcher(BaseFetcher):
         return results
 
     async def _search(
-        self, query: str, window_start: str, window_end: str, page: int = 1
+        self, query: str, window_start: Optional[str], window_end: str, page: int = 1
     ) -> list[Opportunity]:
         headers = {
             "X-Api-Key": self.api_key,
@@ -114,9 +114,10 @@ class GrantsGovFetcher(BaseFetcher):
             close_date = parse_date(summary.get("close_date") or "")
 
             # Client-side date window filter on post_date
+            # window_start=None means no lower bound (bootstrap mode)
             if post_date:
                 post_str = post_date.strftime("%Y-%m-%d")
-                if post_str < window_start:
+                if window_start is not None and post_str < window_start:
                     found_old = True
                     continue
                 if post_str > window_end:

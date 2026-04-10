@@ -46,7 +46,8 @@ def load_config() -> DictConfig:
 
 
 async def fetch_government(
-    cfg: DictConfig, window_start: datetime, window_end: datetime, model: str
+    cfg: DictConfig, window_start: datetime, window_end: datetime, model: str,
+    bootstrap_sources: set[str] = frozenset(),
 ) -> list[Opportunity]:
     """Fetch from all government API sources and web pages in parallel."""
     tasks = []
@@ -58,19 +59,28 @@ async def fetch_government(
     if gov_cfg.get("nsf", {}).get("enabled", False):
         fetcher = get_fetcher("nsf", model=model)
         api_fetchers.append(fetcher)
-        tasks.append(fetcher.fetch(window_start, window_end, list(gov_cfg.nsf.search_keywords)))
+        nsf_start = None if "nsf" in bootstrap_sources else window_start
+        if nsf_start is None:
+            logger.info("Bootstrap: NSF — fetching all open opportunities (no date lower bound)")
+        tasks.append(fetcher.fetch(nsf_start, window_end, list(gov_cfg.nsf.search_keywords)))
 
     # NIH
     if gov_cfg.get("nih", {}).get("enabled", False):
         fetcher = get_fetcher("nih", model=model)
         api_fetchers.append(fetcher)
-        tasks.append(fetcher.fetch(window_start, window_end, list(gov_cfg.nih.search_keywords)))
+        nih_start = None if "nih" in bootstrap_sources else window_start
+        if nih_start is None:
+            logger.info("Bootstrap: NIH — fetching all open opportunities (no date lower bound)")
+        tasks.append(fetcher.fetch(nih_start, window_end, list(gov_cfg.nih.search_keywords)))
 
     # Grants.gov
     if gov_cfg.get("grants_gov", {}).get("enabled", False):
         fetcher = get_fetcher("grants_gov")
         api_fetchers.append(fetcher)
-        tasks.append(fetcher.fetch(window_start, window_end, list(gov_cfg.grants_gov.search_keywords)))
+        gg_start = None if "grants_gov" in bootstrap_sources else window_start
+        if gg_start is None:
+            logger.info("Bootstrap: Grants.gov — fetching all open opportunities (no date lower bound)")
+        tasks.append(fetcher.fetch(gg_start, window_end, list(gov_cfg.grants_gov.search_keywords)))
 
     # Government web sources (DOE, USDOT, etc.)
     web_sources = gov_cfg.get("web_sources", [])
@@ -107,7 +117,8 @@ async def fetch_government(
 
 
 async def fetch_industry(
-    cfg: DictConfig, window_start: datetime, window_end: datetime, model: str
+    cfg: DictConfig, window_start: datetime, window_end: datetime, model: str,
+    bootstrap_sources: set[str] = frozenset(),
 ) -> list[Opportunity]:
     """Fetch from all industry web sources in parallel."""
     industry_cfg = cfg.get("industry", {})
@@ -142,7 +153,8 @@ async def fetch_industry(
 
 
 async def fetch_university(
-    cfg: DictConfig, window_start: datetime, window_end: datetime, model: str
+    cfg: DictConfig, window_start: datetime, window_end: datetime, model: str,
+    bootstrap_sources: set[str] = frozenset(),
 ) -> list[Opportunity]:
     """Fetch from all university internal funding sources in parallel."""
     uni_cfg = cfg.get("university", {})
@@ -177,7 +189,8 @@ async def fetch_university(
 
 
 async def fetch_compute(
-    cfg: DictConfig, window_start: datetime, window_end: datetime, model: str
+    cfg: DictConfig, window_start: datetime, window_end: datetime, model: str,
+    bootstrap_sources: set[str] = frozenset(),
 ) -> list[Opportunity]:
     """Fetch from all compute resource sources in parallel."""
     compute_cfg = cfg.get("compute", {})
@@ -265,6 +278,36 @@ async def fetch_approaching_deadlines(cfg: DictConfig) -> list[Opportunity]:
         await fetcher.close()
 
 
+def _collect_known_sources(cfg: DictConfig) -> list[tuple[str, str]]:
+    """Collect all configured source names and their types."""
+    known: list[tuple[str, str]] = []
+    gov_cfg = cfg.get("government", {})
+    for api in ["nsf", "nih", "grants_gov"]:
+        if gov_cfg.get(api, {}).get("enabled", False):
+            known.append((api, "government"))
+    for src in gov_cfg.get("web_sources", []):
+        known.append((src["name"], "government"))
+    for src in cfg.get("industry", {}).get("sources", []):
+        known.append((src["name"], "industry"))
+    for src in cfg.get("university", {}).get("sources", []):
+        known.append((src["name"], "university"))
+    for cat in ["government", "industry", "university"]:
+        for src in cfg.get("compute", {}).get(cat, []):
+            known.append((src["name"], "compute"))
+    return known
+
+
+def _mark_bootstrapped(
+    db: StateDB, bootstrap_sources: set[str], known_sources: list[tuple[str, str]]
+) -> None:
+    """Mark bootstrap sources as completed after successful fetch."""
+    if not bootstrap_sources:
+        return
+    source_types = {name: stype for name, stype in known_sources}
+    for name in bootstrap_sources:
+        db.mark_source_bootstrapped(name, source_types.get(name, "unknown"))
+
+
 async def run_pipeline(cfg: DictConfig) -> None:
     """Execute the weekly fetch pipeline."""
     db = StateDB(cfg.project.db_path)
@@ -280,12 +323,22 @@ async def run_pipeline(cfg: DictConfig) -> None:
 
     logger.info(f"Fetch window: {window_start.isoformat()} -> {window_end.isoformat()}")
 
+    # Detect sources needing bootstrap (first-time fetch)
+    known_sources = _collect_known_sources(cfg)
+    db.seed_bootstrap(known_sources)
+    bootstrap_sources = db.get_unbootstrapped_sources(known_sources)
+    if bootstrap_sources:
+        logger.info(
+            f"Bootstrap: {len(bootstrap_sources)} new sources need first-time fetch: "
+            f"{sorted(bootstrap_sources)}"
+        )
+
     # Step 2: Fetch from all sources in parallel
     gov_opps, ind_opps, uni_opps, compute_opps = await asyncio.gather(
-        fetch_government(cfg, window_start, window_end, model),
-        fetch_industry(cfg, window_start, window_end, model),
-        fetch_university(cfg, window_start, window_end, model),
-        fetch_compute(cfg, window_start, window_end, model),
+        fetch_government(cfg, window_start, window_end, model, bootstrap_sources),
+        fetch_industry(cfg, window_start, window_end, model, bootstrap_sources),
+        fetch_university(cfg, window_start, window_end, model, bootstrap_sources),
+        fetch_compute(cfg, window_start, window_end, model, bootstrap_sources),
     )
 
     all_opps = gov_opps + ind_opps + uni_opps + compute_opps
@@ -332,6 +385,7 @@ async def run_pipeline(cfg: DictConfig) -> None:
     if not new_opps:
         logger.info("No new opportunities found")
         db.record_fetch("all", window_start, window_end, success=True, count=0)
+        _mark_bootstrapped(db, bootstrap_sources, known_sources)
         db.close()
         return
 
@@ -362,6 +416,7 @@ async def run_pipeline(cfg: DictConfig) -> None:
     if not accepted:
         logger.info("No relevant opportunities after filtering")
         db.record_fetch("all", window_start, window_end, success=True, count=0)
+        _mark_bootstrapped(db, bootstrap_sources, known_sources)
         db.close()
         return
 
@@ -377,8 +432,9 @@ async def run_pipeline(cfg: DictConfig) -> None:
 
     logger.info(f"Stored {stored_count} new opportunities")
 
-    # Step 7: Record successful fetch
+    # Step 7: Record successful fetch and mark bootstrapped sources
     db.record_fetch("all", window_start, window_end, success=True, count=stored_count)
+    _mark_bootstrapped(db, bootstrap_sources, known_sources)
 
     # Step 8: Generate digest HTML for evening email
     _generate_digest(cfg, db)

@@ -57,6 +57,13 @@ CREATE TABLE IF NOT EXISTS email_history (
     success INTEGER NOT NULL DEFAULT 1,
     error_msg TEXT
 );
+
+CREATE TABLE IF NOT EXISTS source_bootstrap (
+    source_name TEXT PRIMARY KEY,
+    source_type TEXT NOT NULL,
+    bootstrapped_at TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
 """
 
 
@@ -100,6 +107,37 @@ class StateDB:
                 )
                 self.conn.commit()
                 logger.info(f"Migrated: added {col} column")
+
+    def seed_bootstrap(self, known_sources: list[tuple[str, str]]) -> None:
+        """Seed source_bootstrap table for existing DBs on first upgrade.
+
+        Called once after migration. If the table is empty but fetch_history
+        has records (meaning the pipeline has run before), mark all known
+        sources as already bootstrapped to prevent re-fetching everything.
+        """
+        row = self.conn.execute("SELECT COUNT(*) as cnt FROM source_bootstrap").fetchone()
+        if row["cnt"] > 0:
+            return  # Already seeded
+
+        has_history = self.conn.execute(
+            "SELECT 1 FROM fetch_history WHERE success = 1 LIMIT 1"
+        ).fetchone()
+        if not has_history:
+            return  # Fresh install — all sources should bootstrap
+
+        now_iso = datetime.now(timezone.utc).isoformat()
+        for name, stype in known_sources:
+            self.conn.execute(
+                """INSERT OR IGNORE INTO source_bootstrap
+                (source_name, source_type, bootstrapped_at, created_at)
+                VALUES (?, ?, ?, ?)""",
+                (name, stype, now_iso, now_iso),
+            )
+        self.conn.commit()
+        logger.info(
+            f"Bootstrap migration: marked {len(known_sources)} existing sources "
+            f"as bootstrapped"
+        )
 
     def close(self) -> None:
         self.conn.close()
@@ -363,6 +401,38 @@ class StateDB:
         if row and row["last_end"]:
             return datetime.fromisoformat(row["last_end"])
         return None
+
+    # --- Source bootstrap operations ---
+
+    def get_unbootstrapped_sources(self, known_sources: list[tuple[str, str]]) -> set[str]:
+        """Return source names that have not yet been bootstrapped.
+
+        Registers any new sources with empty bootstrapped_at, then returns
+        all source names that still have no bootstrapped_at timestamp.
+        """
+        now_iso = datetime.now(timezone.utc).isoformat()
+        for name, stype in known_sources:
+            self.conn.execute(
+                """INSERT OR IGNORE INTO source_bootstrap
+                (source_name, source_type, bootstrapped_at, created_at)
+                VALUES (?, ?, '', ?)""",
+                (name, stype, now_iso),
+            )
+        self.conn.commit()
+        rows = self.conn.execute(
+            "SELECT source_name FROM source_bootstrap WHERE bootstrapped_at = ''"
+        ).fetchall()
+        return {r["source_name"] for r in rows}
+
+    def mark_source_bootstrapped(self, source_name: str, source_type: str) -> None:
+        """Mark a source as bootstrapped after successful first fetch."""
+        self.conn.execute(
+            """UPDATE source_bootstrap SET bootstrapped_at = ?
+            WHERE source_name = ?""",
+            (datetime.now(timezone.utc).isoformat(), source_name),
+        )
+        self.conn.commit()
+        logger.info(f"Source '{source_name}' ({source_type}) marked as bootstrapped")
 
     # --- Email history operations ---
 

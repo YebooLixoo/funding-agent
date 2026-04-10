@@ -36,7 +36,7 @@ class NSFFetcher(BaseFetcher):
 
     async def fetch(
         self,
-        window_start: datetime,
+        window_start: Optional[datetime],
         window_end: datetime,
         keywords: Optional[list[str]] = None,
     ) -> list[Opportunity]:
@@ -52,7 +52,7 @@ class NSFFetcher(BaseFetcher):
         return results
 
     async def _fetch_rss(
-        self, window_start: datetime, window_end: datetime
+        self, window_start: Optional[datetime], window_end: datetime
     ) -> list[Opportunity]:
         """Parse NSF funding RSS feed for new announcements."""
         resp = await self._get(_RSS_URL)
@@ -64,9 +64,12 @@ class NSFFetcher(BaseFetcher):
             if hasattr(entry, "published_parsed") and entry.published_parsed:
                 published = datetime(*entry.published_parsed[:6], tzinfo=timezone.utc)
 
-            # Filter by time window
-            if published and (published < window_start or published > window_end):
-                continue
+            # Filter by time window (window_start=None means no lower bound / bootstrap)
+            if published:
+                if window_start is not None and published < window_start:
+                    continue
+                if published > window_end:
+                    continue
 
             title = entry.get("title", "")
             description = entry.get("summary", "")
