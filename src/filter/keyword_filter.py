@@ -129,10 +129,6 @@ class KeywordFilter:
         compute_count = sum(1 for pat in self._compute_patterns if pat.search(text))
         compute_score = min(compute_count * 0.3, 0.5)
 
-        # Curated compute sources get a floor score (pre-validated relevance)
-        if hasattr(opp, 'source_type') and opp.source_type == 'compute':
-            compute_score = max(compute_score, 0.4)
-
         # Cross-bonus: career keywords combined with domain or primary
         cross_bonus = 0.0
         if career_count > 0 and domain_count > 0:

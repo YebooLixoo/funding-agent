@@ -188,6 +188,9 @@ async def fetch_university(
     return opportunities
 
 
+_RELEVANCE_SCORE = {"very_high": 0.9, "high": 0.8, "medium": 0.7}
+
+
 async def fetch_compute(
     cfg: DictConfig, window_start: datetime, window_end: datetime, model: str,
     bootstrap_sources: set[str] = frozenset(),
@@ -234,7 +237,7 @@ async def fetch_compute(
                     posted_date=opp.posted_date,
                     funding_amount=opp.funding_amount,
                     keywords=opp.keywords,
-                    relevance_score=opp.relevance_score,
+                    relevance_score=_RELEVANCE_SCORE.get(src.get("relevance", "medium"), 0.7),
                     summary=opp.summary,
                     opportunity_status=opp.opportunity_status,
                     deadline_type=src.get("deadline_type", opp.deadline_type),
@@ -389,7 +392,15 @@ async def run_pipeline(cfg: DictConfig) -> None:
         db.close()
         return
 
-    # Step 4: Filter by relevance
+    # Step 3b: Separate curated compute (bypass keyword/LLM filter)
+    non_compute_opps = [opp for opp in new_opps if opp.source_type != "compute"]
+    compute_new_opps = [opp for opp in new_opps if opp.source_type == "compute"]
+    if compute_new_opps:
+        logger.info(
+            f"Compute: {len(compute_new_opps)} curated opportunities bypass keyword filter"
+        )
+
+    # Step 4: Filter non-compute by relevance
     filter_cfg = cfg.get("filter", {})
     kw_filter = KeywordFilter(FilterConfig(
         primary_keywords=list(filter_cfg.get("primary_keywords", [])),
@@ -401,7 +412,7 @@ async def run_pipeline(cfg: DictConfig) -> None:
         keyword_threshold=filter_cfg.get("keyword_threshold", 0.3),
     ))
 
-    accepted, borderline = kw_filter.filter(new_opps)
+    accepted, borderline = kw_filter.filter(non_compute_opps)
 
     # LLM filter for borderline cases
     if borderline:
@@ -410,6 +421,9 @@ async def run_pipeline(cfg: DictConfig) -> None:
             borderline, threshold=filter_cfg.get("llm_threshold", 0.5)
         )
         accepted.extend(llm_accepted)
+
+    # Merge curated compute back (pre-validated via YAML curation + OpportunityValidator)
+    accepted.extend(compute_new_opps)
 
     logger.info(f"After filtering: {len(accepted)} relevant opportunities")
 
