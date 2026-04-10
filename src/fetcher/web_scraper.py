@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import logging
 from datetime import datetime
@@ -16,6 +17,9 @@ from src.fetcher.opportunity_validator import OpportunityValidator
 from src.models import Opportunity
 
 logger = logging.getLogger(__name__)
+
+# Limit concurrent scraping to avoid overwhelming connections and rate limits
+_SCRAPE_SEMAPHORE = asyncio.Semaphore(5)
 
 
 @register_fetcher("web_scraper")
@@ -65,6 +69,17 @@ class WebScraperFetcher(BaseFetcher):
         Returns:
             List of validated opportunities found.
         """
+        async with _SCRAPE_SEMAPHORE:
+            return await self._fetch_source_inner(name, label, url, window_start, window_end)
+
+    async def _fetch_source_inner(
+        self,
+        name: str,
+        label: str,
+        url: str,
+        window_start: datetime,
+        window_end: datetime,
+    ) -> list[Opportunity]:
         try:
             resp = await self._get(url)
             html = resp.text

@@ -33,7 +33,7 @@ class BaseFetcher(ABC):
     source_name: str = ""
     source_type: str = "government"
 
-    def __init__(self, timeout: float = 30.0) -> None:
+    def __init__(self, timeout: float = 120.0) -> None:
         self.client = httpx.AsyncClient(
             timeout=timeout,
             follow_redirects=True,
