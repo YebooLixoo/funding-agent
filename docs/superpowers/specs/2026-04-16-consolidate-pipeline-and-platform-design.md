@@ -1,99 +1,129 @@
 # Consolidate Internal Pipeline and Web Platform — Design
 
 **Date:** 2026-04-16
-**Status:** Draft, awaiting review
+**Status:** Draft v2 — revised after Codex review (job `task-mo2a6875-qwt8cu`, session `019d993d-03ca-71b2-b45e-0036bf05ef98`)
 **Author:** Boyu Yu (with Claude)
+
+## Revision history
+
+- **2026-04-16 v2:** revised based on Codex rescue review. Major changes:
+  - **D4 reversed**: APScheduler-in-process replaced by **launchd → `python -m web.cli` per job**. Reason: `src/summarizer.py` and `src/emailer.py` make blocking calls inside `async def`; running these in the FastAPI event loop would stall the API.
+  - **Per-user email delivery state** (`user_email_deliveries` table) added — replaces a global `opportunities.system_status` flag, which would have broken multi-user delivery (Codex C3).
+  - **`system_search_terms` gains a `target_source` column** to preserve per-source search distinction (NSF/NIH/Grants.gov each have different keywords today).
+  - **All `system_*` FKs are UUID** (matches `web/models/user.py:16`).
+  - **Schema reconciliation made an explicit prerequisite** — `alembic.ini` still points at Postgres, `web/main.py` still uses `create_all()`, and `platform.db` already drifts from the ORM. This must be cleaned up before consolidation migrations.
+  - **Keyword sync mechanism changed** from SQLAlchemy mapper events to session-level `after_flush` listener (or explicit sync from the keyword router).
+  - **Cutover hardened** — FastAPI restarts without launchd jobs re-armed; smoke-test must pass before re-arming.
+  - **Open questions §12 resolved** with Codex's recommendations.
+  - Smaller fixes: drop `compute` from `system_filter_keywords` categories (compute opps already bypass the filter), include Grants.gov approaching-deadlines pass, honor `day_of_week`/`time_of_day` in due logic, refactor `HistoryGenerator`/`Emailer` boundaries, multi-session transaction boundaries in fetch_runner, ADMIN_EMAIL bootstrap (not `ADMIN_USER_ID=1`), broadcast list capped at 25.
+- **2026-04-16 v1:** initial draft.
 
 ## 1. Context
 
 The repository currently runs **two coexisting systems** that share opportunity data via a one-way bridge:
 
-- **Internal pipeline (`src/`)** — a single-user Python CLI driven by `conf/*.yaml`. Runs on launchd every Thursday: noon (fetch) and 8 PM (email). Writes to `data/state.db` (SQLite). Generates a static history page at `docs/index.html`. Owns all fetchers, the keyword filter, the LLM borderline filter, the summarizer, and the SMTP digest.
-- **Web platform (`web/` + `frontend/`)** — a multi-user FastAPI + React app. Has its own DB (`data/platform.db` SQLite or `funding_platform` Postgres), per-user keyword profiles, scoring, bookmarks, dismissals, AI chat, document uploads, and per-user email preferences. **Does not fetch its own opportunities** — it copies them from `data/state.db` on startup via `web/services/seed_opportunities.py`.
+- **Internal pipeline (`src/`)** — single-user Python CLI driven by `conf/*.yaml`. Runs on launchd every Thursday: noon (fetch) and 8 PM (email). Writes to `data/state.db` (SQLite). Generates a static history page at `docs/index.html`. Owns all fetchers, the keyword filter, the LLM borderline filter, the summarizer, and the SMTP digest.
+- **Web platform (`web/` + `frontend/`)** — multi-user FastAPI + React app with its own DB (`data/platform.db` SQLite or `funding_platform` Postgres). Per-user keyword profiles, scoring, bookmarks, dismissals, AI chat, document uploads, and email preferences. Does not fetch its own opportunities; copies them from `data/state.db` on startup via `web/services/seed_opportunities.py`.
 
-This split is historical baggage. It causes:
+This split is historical. It causes:
 
-- **Two databases** to keep in sync (with `seed_opportunities.py` as a leaky bridge).
-- **Two scoring layers** that drift (`src/filter/keyword_filter.py` config in YAML; `web/services/scoring.py` config in DB).
-- **Confused ownership**: changes to the opportunity schema or filter logic must be made in both places.
-- **Stale `seed_opportunities.py` bootstrap**: opportunities seeded on startup; updates after that require restarts or manual seeds.
-- **The platform's `email_scheduler.py` is built but unwired** — no scheduler triggers it, so per-user digests don't actually go out.
+- Two databases to keep in sync (`seed_opportunities.py` is a leaky bridge).
+- Two scoring layers that drift (YAML in `src/`, DB in `web/`).
+- Confused ownership of the opportunity schema.
+- The platform's `email_scheduler.py` is built but unwired; per-user digests don't actually go out.
+- The platform's `web/main.py:18` calls `create_all()` on startup, bypassing Alembic; the live `platform.db` schema has already drifted from the ORM.
 
-This design consolidates everything into the platform (`web/`), with `src/` retained as a fetch/filter/summarize **library** called by the platform. The internal CLI becomes a thin command-line wrapper around the same in-process code paths.
+This design consolidates everything into `web/`, with `src/` retained as a fetch/filter/summarize **library** invoked by a CLI (`web/cli.py`) that launchd schedules. FastAPI itself runs no background jobs.
 
 ## 2. Goals and non-goals
 
 ### 2.1 Goals (Project A — this spec)
 
-- **One database** (SQLite) as the single source of truth.
-- **One scheduler** (APScheduler in-process) running fetch + per-user digest jobs.
-- **Admin user account** (`user_id=1`, the existing Boyu account) drives the system fetch via `system_search_terms` and `system_filter_keywords` tables that auto-sync from the admin's `UserKeyword` rows.
-- **Behavior parity with today**: same Thursday-noon fetch, same Thursday-8pm digest content, same static history page at `docs/index.html`, same OpenAI cost.
-- **Per-user broadcast lists**: any user can CC colleagues on their digest with no logins required; tokenized unsubscribe.
-- **In-app per-user history view** in addition to the global static page.
-- **D3-shaped data model**: when Project B arrives, the only change is swapping the auto-sync source from "admin user" to "union of all users" — no re-architecture.
+- One database (SQLite, WAL mode) as the single source of truth.
+- Scheduling via existing launchd → `python -m web.cli {fetch,email-digest}`.
+- Admin user account (identified by `ADMIN_EMAIL`, persisted via existing `users.is_admin`) drives the system fetch via `system_search_terms` and `system_filter_keywords`, auto-synced from the admin's `UserKeyword` rows.
+- **Behavior parity with today**: same Thursday-noon fetch, same Thursday-8pm digest content, same static history page, same OpenAI cost — *plus* the Grants.gov approaching-deadlines pass that already runs today.
+- Per-user broadcast lists (≤25 recipients/user); tokenized unsubscribe.
+- In-app per-user history view in addition to the global static page.
+- D3-shaped data model: when Project B arrives, the only change is swapping the auto-sync source from "admin user" to "union of all users" — no re-architecture.
+- Per-user delivery state via `user_email_deliveries` so multiple users can independently track what they've received.
 
 ### 2.2 Non-goals (deferred to Project B)
 
 - Per-user fetch agents.
-- Union-of-users `system_search_terms` (the table exists; it just stays seeded from one user in v1).
+- Union-of-users `system_search_terms`.
 - Embedding-based semantic matching beyond what `web/services/scoring.py` already does.
 - Public registration of arbitrary users (registration already works; this spec doesn't expand the audience).
 - Postgres support (drop for now; can return when scale demands it).
 
 ## 3. Decisions
 
-Captured from the brainstorming session (2026-04-16):
-
 | # | Decision | Rationale |
 |---|----------|-----------|
-| D1 | Broadcast list per user (CC colleagues, no login required) | Lowest-friction colleague onboarding; preserves today's broadcast UX |
-| D2 | Admin user account drives the system fetch | Matches "internal system is just my account" framing |
-| D3 | `system_search_terms` + `system_filter_keywords` tables, seeded from admin's `UserKeyword`; D3-ready (Project B swaps source to union-of-users) | Sub-linear scaling; no re-architecture later |
-| D4 | APScheduler in-process for v1; HTTP endpoint (cron-hits-`POST /admin/fetch`) as upgrade path | Simplest infra; identical job code in either case |
-| D5 | One-time migration of `data/state.db` → `data/platform.db`; archive `state.db`; delete `seed_opportunities.py` | Clean cut-over, preserves history |
-| D6 | Both global static `docs/index.html` and in-app per-user history view | Public archive + logged-in personalization |
-| D7 | Keep fetch-time relevance filter, but source it from `system_filter_keywords` (DB), not `conf/filter.yaml` | Cost-flat, behavior parity, world-scale upgrade path is one query change |
-| D8 | SQLite-only (drop Postgres); use WAL mode | Scale doesn't justify Postgres; eliminates dev pain; simplifies Docker |
-| D9 | `conf/sources/*.yaml` stays in YAML | Source endpoint list is admin-curated, version-controlled, changes rarely |
-| D10 | Repurpose `fetch_now.sh` and `email_now.sh` as `python -m web.cli fetch` / `email-digest` wrappers | Same UX; same DB |
-| D11 | Tokenized unsubscribe link in every broadcast email | Standard practice; legal/anti-spam |
-| D12 | Admin UX = auto-sync from admin's `UserKeyword`; no separate admin UI in v1 | Minimal surface area; admin already has a Profile keyword editor |
+| D1 | Broadcast list per user (CC colleagues, no login required), capped at 25/user | Lowest-friction colleague onboarding; the current static recipient list has 5 entries, so 25 is generous |
+| D2 | Admin user account drives the system fetch; identified via `ADMIN_EMAIL` env → `users.is_admin` flag | Matches "internal system is just my account" framing; `is_admin` already exists at `web/models/user.py:25` |
+| D3 | `system_search_terms(term, target_source, ...)` + `system_filter_keywords` tables, seeded from admin's `UserKeyword`; D3-ready (Project B swaps source to union-of-users) | Sub-linear scaling; preserves per-source search-term distinction (NSF/NIH/Grants.gov each have their own search term lists today) |
+| D4 | **launchd → `python -m web.cli` per job** (NOT APScheduler in-process). FastAPI runs no background jobs. | `src/summarizer.py:49` and `src/emailer.py:124` make blocking sync calls inside `async def`; in-process scheduler would stall the API event loop and require `--workers 1`. CLI process per job is simpler and parallelism-safe. |
+| D5 | One-time migration of `data/state.db` → `data/platform.db`; archive `state.db.legacy` only after smoke test passes | Clean cut-over, preserves history, reversible |
+| D6 | Both global static `docs/index.html` (regenerated only after admin's digest) and in-app per-user history view (backed by `user_email_deliveries`) | Public archive + logged-in personalization, without per-user-send page churn |
+| D7 | Keep fetch-time relevance filter, but source it from `system_filter_keywords` (DB) instead of `conf/filter.yaml`. Numeric thresholds (`keyword_threshold`, `llm_threshold`, borderline range) move to `web/config.py` (with sensible defaults matching today). | Cost-flat, behavior parity, world-scale upgrade is one query change |
+| D8 | SQLite-only (drop Postgres); WAL mode; `PRAGMA busy_timeout=5000` | Scale doesn't justify Postgres; eliminates dev pain; simplifies Docker |
+| D9 | `conf/sources/*.yaml` source endpoint list stays in YAML | Source endpoints change rarely; version-controlled |
+| D10 | Repurpose `fetch_now.sh` and `email_now.sh` as `python -m web.cli fetch` / `email-digest [--user-email ...]` wrappers | Same UX; same DB |
+| D11 | Tokenized unsubscribe link (UUID4) in every broadcast email; recipients_remove on click | Standard practice; legal/anti-spam |
+| D12 | Auto-sync from admin's `UserKeyword` via session-level `after_flush` listener (not mapper events). Backstop: idempotent re-sync at start of every fetch. | Mapper events have flush restrictions per SQLAlchemy docs; session-level events run safely inside the parent transaction |
 | D13 | Port `source_bootstrap` table directly into platform DB | Same logic, same behavior |
+| D14 | Per-user "already sent" state in a new `user_email_deliveries(user_id, opportunity_id, sent_at)` table — NOT a global `opportunities.system_status` column | Multi-user correct; required to deliver the same opp to multiple users without one user's send blocking another's |
+| D15 | **Schema reconciliation precedes consolidation.** Fix `alembic.ini` to SQLite, drop `create_all()` from `web/main.py:18`, generate a baseline migration that captures current `platform.db` drift, then layer consolidation migrations on top. | Without this, every subsequent migration risks fighting the drift |
 
 ## 4. Architecture
 
 ### 4.1 Component layout (post-consolidation)
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│  FastAPI app (web/main.py)                                  │
-│                                                             │
-│  ┌──────────────┐ ┌────────────────┐ ┌──────────────────┐   │
-│  │ HTTP routers │ │ APScheduler     │ │ web/cli.py       │   │
-│  │ (existing)   │ │  (new)          │ │ (new — manual    │   │
-│  │              │ │                 │ │   triggers)      │   │
-│  └──────┬───────┘ └────────┬────────┘ └────────┬─────────┘   │
-│         │                  │                   │             │
-│         └──────────┬───────┴───────────────────┘             │
-│                    │                                         │
-│         ┌──────────▼──────────┐                              │
-│         │ web/services/        │                             │
-│         │   fetch_runner.py    │  ← new: orchestrates a fetch│
-│         │   email_dispatcher   │  ← new: dispatches digests  │
-│         │   scoring.py         │  (existing)                 │
-│         └──────────┬──────────┘                              │
-│                    │ uses                                    │
-│         ┌──────────▼──────────┐                              │
-│         │ src/  (library)      │ — fetchers, filter,         │
-│         │                      │   summarizer, history       │
-│         │                      │   generator, emailer        │
-│         └──────────┬──────────┘                              │
-│                    │                                         │
-│         ┌──────────▼──────────┐                              │
-│         │ data/platform.db     │  ← single SQLite, WAL mode  │
-│         └─────────────────────┘                              │
-└─────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────┐
+│  launchd (per-job CLI processes)                              │
+│                                                               │
+│  ┌─────────────────────────────┐ ┌──────────────────────────┐│
+│  │ thu 12:00 MT                 │ │ hourly                   ││
+│  │ uv run python -m web.cli    │ │ uv run python -m web.cli ││
+│  │   fetch                      │ │   email-digest --due     ││
+│  └────────────┬────────────────┘ └──────────────┬───────────┘│
+│               │                                  │            │
+└───────────────┼──────────────────────────────────┼────────────┘
+                │                                  │
+                ▼                                  ▼
+       ┌─────────────────┐                ┌────────────────────┐
+       │ web/cli.py       │                │ web/cli.py          │
+       └────────┬─────────┘                └─────────┬──────────┘
+                │                                    │
+        ┌───────▼─────────┐               ┌──────────▼───────────┐
+        │ web/services/    │               │ web/services/         │
+        │  fetch_runner    │  ←—— shared ——→  email_dispatcher   │
+        │  opportunity_    │               │  email_scheduler      │
+        │   writer         │               │                       │
+        │  auto_scorer     │               │                       │
+        └───────┬─────────┘               └──────────┬───────────┘
+                │                                    │
+                │   ┌──────────────────────────┐    │
+                │   │ src/  (library only)      │    │
+                └──→│  fetchers, filter,        │←───┘
+                    │  summarizer, history,     │
+                    │  emailer                  │
+                    └────────────┬─────────────┘
+                                 │
+                                 ▼
+                       ┌──────────────────────┐
+                       │ data/platform.db      │
+                       │ (SQLite, WAL)         │
+                       └─────────┬────────────┘
+                                 ▲
+                                 │
+       ┌─────────────────────────┴──────────────────────────┐
+       │ FastAPI app (web/main.py)                          │
+       │   HTTP routers, auth, scoring, in-app UI            │
+       │   NO background jobs                                │
+       └─────────────────────────────────────────────────────┘
 ```
 
 ### 4.2 What changes vs. today
@@ -101,338 +131,388 @@ Captured from the brainstorming session (2026-04-16):
 | Area | Before | After |
 |------|--------|-------|
 | Databases | `data/state.db` (SQLite) + `data/platform.db` (SQLite) or Postgres | `data/platform.db` (SQLite, WAL) only |
-| Scheduling | launchd → `python -m src.weekly_fetch` / `weekly_email` | APScheduler inside FastAPI; launchd just starts FastAPI |
-| Fetch trigger | CLI script + cron | APScheduler job (with manual override via `web/cli.py`) |
-| Filter source | `conf/filter.yaml` | `system_filter_keywords` table, auto-synced from admin's `UserKeyword` |
-| Search-term source (NSF/NIH/Grants.gov queries) | `conf/sources/government.yaml::*.search_keywords` | `system_search_terms` table, auto-synced from admin's `UserKeyword` |
+| Scheduling | launchd → `python -m src.weekly_fetch` / `weekly_email` | launchd → `python -m web.cli fetch` / `email-digest --due` (per-job process) |
+| Fetch trigger | CLI script + cron | Same shape — CLI script + launchd, but writing to platform DB and reading config from DB |
+| Filter source | `conf/filter.yaml` | `system_filter_keywords` table, auto-synced from admin's `UserKeyword`. Thresholds in `web/config.py`. |
+| Search-term source (NSF/NIH/Grants.gov queries) | `conf/sources/government.yaml::*.search_keywords` (per-source) | `system_search_terms(term, target_source)` table, auto-synced from admin's `UserKeyword`, partitioned by `target_source` |
 | Sources list (URLs) | `conf/sources/*.yaml` | unchanged — stays in YAML |
-| Per-user digest sender | None (built but unwired) | APScheduler nightly job iterating `email_scheduler.get_users_due_for_email` |
-| Static history page | Generated from `state.db` after Thursday email | Generated from `platform.db` after fetch + after each per-user digest |
+| Per-user "already emailed" state | Global `seen_opportunities.status='emailed'` in `state.db` | Per-user `user_email_deliveries(user_id, opportunity_id, sent_at)` join table |
+| Per-user digest sender | None (built but unwired; ignores `day_of_week`/`time_of_day`) | `python -m web.cli email-digest --due`, hourly via launchd; honors prefs |
+| Static history page | Generated from `state.db` after Thursday email | Generated from `platform.db` after admin's digest only (per-user freshness lives in the in-app view) |
 | Bridge code | `web/services/seed_opportunities.py` | Deleted |
-| Postgres support | Yes | Removed (asyncpg dep dropped, `docker-compose.yml` simplified) |
+| Postgres support | Yes | Removed (`Dockerfile.web:18`, `docker-compose.yml:20` updated; asyncpg dropped if present) |
+| Schema management | `Base.metadata.create_all()` at startup, no Alembic versions on disk | Alembic migrations are authoritative; `create_all()` removed from lifespan |
 
 ### 4.3 Data flow — Thursday noon fetch (consolidated)
 
-1. APScheduler trigger (`weekly_fetch_job`, Thursday 12:00 MT) calls `web/services/fetch_runner.run_fetch(db_session)`.
-2. `fetch_runner` reads `system_search_terms` and `system_filter_keywords` from DB. Seeds them from admin's active `UserKeyword` rows on every run (idempotent — see §5.3).
-3. `fetch_runner` invokes the existing `src/` fetchers in parallel (NSF, NIH, Grants.gov, government web sources, industry, university, compute) using terms from `system_search_terms` for the API queries. Web scrapers are unchanged (they don't take search terms).
-4. Returned `Opportunity` dataclasses go through `KeywordFilter` (using `system_filter_keywords`) → `LLMFilter` borderline pass → curated compute bypass (unchanged) → `Summarizer`.
-5. Survivors are written to `platform.db` via SQLAlchemy ORM (new helper: `web/services/opportunity_writer.upsert_opportunity`). Dedup by `composite_id`, URL, and title-similarity (logic ported from `src/state.py`).
-6. After successful fetch, the global digest HTML for that week is generated and archived (same as today, used by Thursday-8pm admin digest).
-7. The static `docs/index.html` is regenerated.
-8. Bootstrap state is updated (newly-bootstrapped sources marked).
-9. `fetch_history` row recorded.
+1. launchd fires `uv run python -m web.cli fetch` at Thu 12:00 MT.
+2. CLI opens an `AsyncSession`, reads `system_search_terms` (grouped by `target_source`) and `system_filter_keywords`, plus thresholds from `web/config.py`. Backstop sync from admin's `UserKeyword` runs first (idempotent — see §5.3). Closes the session before remote I/O begins.
+3. `fetch_runner.run_fetch` invokes the existing `src/` fetchers in parallel — NSF, NIH, Grants.gov each get *their* term list; web scrapers (industry, university, compute) and the Grants.gov approaching-deadlines pass run unchanged. No DB session is held during HTTP/LLM calls.
+4. Returned `Opportunity` dataclasses go through `KeywordFilter` → `LLMFilter` borderline pass → curated compute bypass (unchanged) → `Summarizer`.
+5. Survivors are written via short-lived sessions (one transaction per source's batch, not one giant transaction). `opportunity_writer.upsert_opportunity` handles dedup (composite_id + URL + title-similarity, logic ported from `src/state.py`).
+6. **Auto-score step**: for every newly-stored opportunity, `auto_scorer.score_for_all_active_users` writes a `UserOpportunityScore` row per active user. Without this step, the per-user digest finds nothing to send.
+7. `fetch_history` row recorded.
+8. Bootstrap state updated.
+9. Static `docs/index.html` is regenerated *if and only if* the admin's digest is also being generated this run (per D6, the static page tracks the admin's emailed set).
+10. CLI exits cleanly. Exit code communicates success/failure to launchd and any monitoring.
 
 ### 4.4 Data flow — per-user digest
 
-1. APScheduler trigger (`per_user_digest_job`, hourly check) calls `email_dispatcher.dispatch_due_users(db_session)`.
-2. For each user returned by `email_scheduler.get_users_due_for_email`:
-   1. Build the user's digest HTML using `email_scheduler.get_opportunities_for_user` + the existing `Emailer.compose` template.
-   2. Recipients = `[user.email] + active_broadcast_recipients(user_id)`.
-   3. Each recipient gets a personalized email with their unsubscribe token in the footer (admin user gets none; broadcast recipients get one each).
-   4. Send via `Emailer.send`.
-   5. `mark_emailed` for the opportunities included.
-   6. Record `UserEmailHistory` row.
+1. launchd fires `uv run python -m web.cli email-digest --due` hourly.
+2. CLI calls `email_dispatcher.dispatch_due_users(db_session, now)`.
+3. `email_scheduler.get_users_due_for_email` is **rewritten** to honor `frequency` AND `day_of_week` AND `time_of_day` (current implementation at `web/services/email_scheduler.py:32` only checks `frequency`, despite `day_of_week`/`time_of_day` existing on the model).
+4. For each due user:
+   1. Compute opportunities to include: scored above the user's `min_score`, deadline within the user's `deadline_lookahead_days`, NOT already in `user_email_deliveries` for this user.
+   2. Build digest HTML — adapter layer translates ORM rows + scores into the dict shape `Emailer.compose()` expects (see §6.1).
+   3. Recipients = `[user.email] + active_broadcast_recipients(user_id)`. Each broadcast recipient's email gets its own copy with their unsubscribe token in the footer (admin's own email gets none).
+   4. Send via `Emailer.send` (per-recipient try/except; one bounce doesn't fail the batch).
+   5. Insert `user_email_deliveries` rows for each opportunity sent.
+   6. Insert `UserEmailHistory` row.
    7. Update `last_sent_at` on `UserEmailPref`.
-3. Regenerate the static `docs/index.html` to include any newly-emailed opportunities.
+5. After all due users processed: if the admin user was among them, regenerate `docs/index.html`.
 
-The admin's Thursday-8pm digest is a special case: it's the first user processed (since admin's frequency is weekly with `last_sent_at` set such that 8pm Thursday triggers).
+### 4.5 Concurrency contract
+
+- launchd guarantees only one `web.cli fetch` runs at a time (per-job `KeepAlive: false`, `LaunchOnlyOnce: true`-style discipline by exit code). Manual `web.cli fetch` invocations check for an advisory lock file (`data/.fetch.lock`) and refuse if held.
+- FastAPI is read-mostly; SQLite WAL allows concurrent readers + a single writer, so CLI fetch (writer) and FastAPI (reader) don't block each other.
+- Multi-worker FastAPI is fine because no background jobs run inside FastAPI.
 
 ## 5. Data model changes
 
-All migrations expressed as Alembic revisions in `alembic/versions/`. SQLite-compatible (no Postgres-only types).
+All migrations expressed as Alembic revisions in `alembic/versions/`. SQLite-compatible; no Postgres-only types. UUID columns use `CHAR(32)` on SQLite (SQLAlchemy's automatic fallback for `UUID(as_uuid=True)`); existing model definitions are unchanged.
+
+### 5.0 Schema reconciliation (prerequisite, before any consolidation migration)
+
+This is its own commit / migration revision, landed *first*:
+
+1. Update `alembic.ini:4` from Postgres URL to `sqlite+aiosqlite:///data/platform.db`.
+2. Remove the `create_all()` call from `web/main.py:18` (the lifespan).
+3. Generate a baseline Alembic revision that captures the current ORM schema, then a `001_baseline_reconciliation` revision that adds the columns the live `platform.db` is missing (`opportunities.opportunity_status` / `deadline_type` / `resource_*` / `eligibility` / `access_url` if absent; `user_opportunity_scores.{keyword,profile,behavior,urgency}_score` if absent). Run on a copy first; verify.
+4. After this, all schema changes are Alembic-only.
 
 ### 5.1 New tables
 
 ```sql
 -- Search terms used for API queries (NSF/NIH/Grants.gov)
 CREATE TABLE system_search_terms (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    term TEXT NOT NULL UNIQUE,
-    source_user_id INTEGER NOT NULL,    -- which user contributed it (always admin in v1)
-    is_active INTEGER NOT NULL DEFAULT 1,
-    created_at TEXT NOT NULL,
-    updated_at TEXT NOT NULL,
-    FOREIGN KEY (source_user_id) REFERENCES users(id)
+    id              CHAR(32) PRIMARY KEY,           -- UUID
+    term            VARCHAR(256) NOT NULL,
+    target_source   VARCHAR(64) NOT NULL,           -- 'nsf' | 'nih' | 'grants_gov' | 'all'
+    source_user_id  CHAR(32) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    is_active       BOOLEAN NOT NULL DEFAULT 1,
+    created_at      DATETIME NOT NULL,
+    updated_at      DATETIME NOT NULL,
+    UNIQUE (term, target_source, source_user_id)
 );
+CREATE INDEX ix_system_search_terms_target_active ON system_search_terms(target_source, is_active);
 
 -- Keyword filter applied at fetch time (mirrors FilterConfig)
 CREATE TABLE system_filter_keywords (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    keyword TEXT NOT NULL,
-    category TEXT NOT NULL,             -- 'primary' | 'domain' | 'career' | 'faculty' | 'compute' | 'exclusion'
-    source_user_id INTEGER NOT NULL,
-    is_active INTEGER NOT NULL DEFAULT 1,
-    created_at TEXT NOT NULL,
-    updated_at TEXT NOT NULL,
-    UNIQUE (keyword, category),
-    FOREIGN KEY (source_user_id) REFERENCES users(id)
+    id              CHAR(32) PRIMARY KEY,
+    keyword         VARCHAR(256) NOT NULL,
+    category        VARCHAR(32) NOT NULL,           -- 'primary' | 'domain' | 'career' | 'faculty' | 'exclusion'
+    source_user_id  CHAR(32) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    is_active       BOOLEAN NOT NULL DEFAULT 1,
+    created_at      DATETIME NOT NULL,
+    updated_at      DATETIME NOT NULL,
+    UNIQUE (keyword, category, source_user_id)
 );
+-- NOTE: 'compute' deliberately omitted — compute opps already bypass the keyword filter
+-- (see src/weekly_fetch.py:395). Adding it would be misleading.
 
--- Per-user broadcast list
+-- Per-user broadcast list (recipients of a user's digest)
 CREATE TABLE broadcast_recipients (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    owner_user_id INTEGER NOT NULL,
-    email TEXT NOT NULL,
-    name TEXT,
-    is_active INTEGER NOT NULL DEFAULT 1,
-    unsubscribe_token TEXT NOT NULL UNIQUE,
-    created_at TEXT NOT NULL,
-    unsubscribed_at TEXT,
-    UNIQUE (owner_user_id, email),
-    FOREIGN KEY (owner_user_id) REFERENCES users(id)
+    id                  CHAR(32) PRIMARY KEY,
+    owner_user_id       CHAR(32) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    email               VARCHAR(320) NOT NULL,
+    name                VARCHAR(256),
+    is_active           BOOLEAN NOT NULL DEFAULT 1,
+    unsubscribe_token   CHAR(36) NOT NULL UNIQUE,    -- UUID4 string form
+    created_at          DATETIME NOT NULL,
+    unsubscribed_at     DATETIME,
+    UNIQUE (owner_user_id, email)
 );
+-- Application-level cap of 25 active recipients per owner_user_id
+-- (validated in web/routers/broadcast.py POST handler)
 
--- Source bootstrap state (ported from src/state.py)
+-- Per-user delivery state (replaces global emailed flag)
+CREATE TABLE user_email_deliveries (
+    id              CHAR(32) PRIMARY KEY,
+    user_id         CHAR(32) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    opportunity_id  CHAR(32) NOT NULL REFERENCES opportunities(id) ON DELETE CASCADE,
+    sent_at         DATETIME NOT NULL,
+    UNIQUE (user_id, opportunity_id)
+);
+CREATE INDEX ix_user_email_deliveries_user_sent ON user_email_deliveries(user_id, sent_at);
+
+-- Source bootstrap state (ported from src/state.py:61)
 CREATE TABLE source_bootstrap (
-    source_name TEXT PRIMARY KEY,
-    source_type TEXT NOT NULL,
-    bootstrapped_at TEXT NOT NULL,
-    created_at TEXT NOT NULL
+    source_name      VARCHAR(64) PRIMARY KEY,
+    source_type      VARCHAR(32) NOT NULL,
+    bootstrapped_at  DATETIME NOT NULL,
+    created_at       DATETIME NOT NULL
 );
 
 -- Fetch + email history (ported)
 CREATE TABLE fetch_history (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    source TEXT NOT NULL,
-    fetch_window_start TEXT NOT NULL,
-    fetch_window_end TEXT NOT NULL,
-    success INTEGER NOT NULL DEFAULT 1,
-    count INTEGER NOT NULL DEFAULT 0,
-    error_msg TEXT,
-    created_at TEXT NOT NULL
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    source              VARCHAR(64) NOT NULL,
+    fetch_window_start  DATETIME NOT NULL,
+    fetch_window_end    DATETIME NOT NULL,
+    success             BOOLEAN NOT NULL DEFAULT 1,
+    count               INTEGER NOT NULL DEFAULT 0,
+    error_msg           TEXT,
+    created_at          DATETIME NOT NULL
 );
--- (UserEmailHistory already exists in web/models/email_pref.py)
+-- (UserEmailHistory already exists in web/models/email_pref.py — extend if needed)
 ```
 
 ### 5.2 Modified tables
 
-`opportunities` (existing) — add columns for fields currently held only in `state.db`:
-
-```sql
-ALTER TABLE opportunities ADD COLUMN opportunity_status TEXT DEFAULT 'open';
-ALTER TABLE opportunities ADD COLUMN deadline_type TEXT DEFAULT 'fixed';
-ALTER TABLE opportunities ADD COLUMN resource_type TEXT;
-ALTER TABLE opportunities ADD COLUMN resource_provider TEXT;
-ALTER TABLE opportunities ADD COLUMN resource_scale TEXT;
-ALTER TABLE opportunities ADD COLUMN allocation_details TEXT;
-ALTER TABLE opportunities ADD COLUMN eligibility TEXT;
-ALTER TABLE opportunities ADD COLUMN access_url TEXT;
-ALTER TABLE opportunities ADD COLUMN system_status TEXT DEFAULT 'pending_email';
--- system_status: 'pending_email' | 'emailed' | 'archived'
--- (most of these already exist on the SQLAlchemy model — verify before generating migration)
-```
+`opportunities` (existing) — most columns already exist on the SQLAlchemy model (`web/models/opportunity.py`); the *live* DB is what's missing them. Reconciliation in §5.0 covers this. **No `system_status` column is added** — per-user state lives in `user_email_deliveries`.
 
 ### 5.3 Auto-sync from admin's `UserKeyword`
 
-Implementation: a SQLAlchemy event listener on `UserKeyword` (insert/update/delete) for the admin user (configurable via `ADMIN_USER_ID` setting; defaults to `1`).
+**Mechanism**: a session-level `after_flush` listener registered on the global `Session` factory.
 
 ```python
 # web/services/keyword_sync.py
-@event.listens_for(UserKeyword, 'after_insert')
-@event.listens_for(UserKeyword, 'after_update')
-@event.listens_for(UserKeyword, 'after_delete')
-def sync_admin_keywords(mapper, connection, target):
-    if target.user_id != settings.admin_user_id:
+from sqlalchemy import event
+from web.database import async_session  # the AsyncSession factory
+
+@event.listens_for(async_session.sync_session_class, "after_flush")
+def sync_admin_keywords(session, flush_context):
+    admin_user_id = _resolve_admin_user_id(session)
+    touched = [obj for obj in session.new | session.dirty | session.deleted
+               if isinstance(obj, UserKeyword) and obj.user_id == admin_user_id]
+    if not touched:
         return
-    # Sync to system_search_terms (primary, domain, career, faculty categories)
-    # Sync to system_filter_keywords (all categories incl. exclusion)
-    ...
+    _resync_system_tables(session, admin_user_id)
 ```
 
-This also runs idempotently at the start of every fetch (defensive — covers the case where the admin edited keywords directly via SQL or the listener was missed).
+`after_flush` runs inside the parent transaction; if the parent rolls back, the system-table writes roll back too. `after_commit` would be wrong here (cannot emit SQL on the same connection), and mapper-level events have flush restrictions per the SQLAlchemy docs.
 
-For Project B the listener becomes "for any active user" with deduplication.
+**Backstop**: `fetch_runner` calls `_resync_system_tables(session, admin_user_id)` at the start of every fetch — covers cases where the admin edited keywords directly via SQL or the listener was somehow missed.
+
+For Project B, the listener becomes "for any active user" with appropriate dedup.
 
 ### 5.4 Migration script
 
-One-time script at `scripts/migrate_state_db.py`:
+`scripts/migrate_state_db.py`:
 
-1. Open `data/state.db` (read-only) and `data/platform.db` (read-write).
-2. Run Alembic upgrade to head on `platform.db` (creates new tables, adds columns).
-3. Copy `seen_opportunities` rows → `opportunities` (upsert by `composite_id`). Map `status='emailed'` → `system_status='emailed'`.
-4. Copy `fetch_history` rows.
-5. Copy `email_history` rows → `UserEmailHistory` for admin user.
-6. Copy `source_bootstrap` rows.
-7. Seed `system_search_terms` and `system_filter_keywords` from admin's `UserKeyword` (or, if admin has none, from `conf/filter.yaml` and `conf/sources/*.yaml::search_keywords` as a one-time bootstrap).
-8. Move `data/state.db` → `data/state.db.legacy` (do not delete; keep for ~30 days).
-9. Print summary: rows migrated, bootstrap state, next steps.
+1. Verify schema reconciliation (§5.0) is complete on `platform.db` (Alembic revision check).
+2. Open `data/state.db` (read-only) and `data/platform.db` (read-write, SQLite WAL).
+3. Apply consolidation Alembic revision (creates new tables in §5.1).
+4. Resolve admin user via `ADMIN_EMAIL` → `users` row (`is_admin=true`). Fail loudly if not found.
+5. Copy `seen_opportunities` rows → `opportunities` (upsert by `composite_id`).
+6. For rows where `state.db.status='emailed'`, insert a `user_email_deliveries(admin_user_id, opportunity_id, fetched_at)` row.
+7. Copy `fetch_history` rows.
+8. Copy `email_history` rows → `UserEmailHistory` for admin user.
+9. Copy `source_bootstrap` rows.
+10. Seed `system_search_terms` and `system_filter_keywords` from admin's `UserKeyword` rows. If admin has none yet, do a one-time bootstrap from `conf/filter.yaml` and `conf/sources/*.yaml::search_keywords` (preserving `target_source` per source).
+11. Print summary: rows migrated, deliveries created, bootstrap state.
+12. Verify counts (assertions). Exit non-zero on mismatch.
+13. **Do not** rename `state.db` here — that happens after smoke test (§10).
 
 ## 6. Component-level design
 
 ### 6.1 New: `web/services/fetch_runner.py`
 
-Public function: `async def run_fetch(db: AsyncSession) -> FetchResult`.
+Public function: `async def run_fetch(now: datetime) -> FetchResult`.
 
-Wraps the orchestration currently in `src/weekly_fetch.run_pipeline`. Differences:
+Owns its own session lifecycle. Opens short-lived sessions for: (a) initial config read + admin keyword resync, (b) each source-batch write, (c) post-fetch bookkeeping (fetch_history, bootstrap state). No session is held across HTTP or LLM calls.
 
-- Reads search terms / filter keywords from DB (not `conf/*.yaml`).
-- Writes opportunities via SQLAlchemy ORM (not raw SQLite).
-- Returns a structured result (counts, errors) for HTTP endpoints / CLI.
-
-Reuses **unchanged**: `src/fetcher/*`, `src/filter/*`, `src/summarizer.py`, `src/models.Opportunity` dataclass.
+Reuses unchanged from `src/`: `fetcher/*`, `filter/*`, `summarizer.py`, `models.Opportunity` dataclass, `fetcher/grants_gov.GrantsGovFetcher.fetch_approaching_deadlines`.
 
 ### 6.2 New: `web/services/email_dispatcher.py`
 
-Public function: `async def dispatch_due_users(db: AsyncSession) -> list[DispatchResult]`.
+Public function: `async def dispatch_due_users(now: datetime) -> list[DispatchResult]`.
 
-Per due user: build digest, expand recipient list with broadcast list, render unsubscribe tokens, send, mark emailed, regenerate static history.
-
-Reuses unchanged: `src/emailer.Emailer`, `templates/digest.html`, `web/services/email_scheduler.*`.
+Per due user: build digest, expand recipient list with broadcast list, render unsubscribe tokens, send, write `user_email_deliveries` + `UserEmailHistory`. Adapter helper translates `(Opportunity, UserOpportunityScore)` tuples into the dict shape `Emailer.compose()` expects (see §6.4).
 
 ### 6.3 New: `web/services/keyword_sync.py`
 
-SQLAlchemy event listeners + idempotent sync function. Sync is one direction: admin's `UserKeyword` → `system_*` tables. Other users' edits don't propagate (in v1).
+Session-level `after_flush` listener (§5.3) plus the idempotent `_resync_system_tables` helper.
 
-### 6.4 New: `web/services/opportunity_writer.py`
+### 6.4 New: `web/services/email_compose_adapter.py`
 
-`async def upsert_opportunity(db, opp: Opportunity) -> bool` — handles the dedup logic currently in `StateDB.store_opportunity` (composite_id + URL + title-similarity check), translated to SQLAlchemy.
+`Emailer.compose()` (in `src/emailer.py:43`) expects pre-grouped dict lists, not ORM rows. This adapter takes `(Opportunity, UserOpportunityScore)` tuples and groups them by `source_type` into the shape `compose()` accepts — without modifying `src/emailer.py`. Keeps the `src/` library boundary clean.
 
-### 6.5 New: `web/scheduler.py`
+### 6.5 New: `web/services/auto_scorer.py`
 
-APScheduler `AsyncIOScheduler` wired into FastAPI lifespan. Two jobs:
+`async def score_new_opportunities(opportunity_ids: list[UUID]) -> None` — for each newly-stored opportunity, runs `web/services/scoring.py` for all active users. Called from `fetch_runner` at the end of each source batch. Without this, per-user digests find no scored opps.
 
-- `weekly_fetch` — Thursday 12:00 MT, triggers `fetch_runner.run_fetch`.
-- `digest_dispatcher` — hourly, triggers `email_dispatcher.dispatch_due_users` (the function internally checks who's due based on user prefs).
+### 6.6 New: `web/services/opportunity_writer.py`
 
-Job execution wrapped in a try/except that logs to `outputs/logs/scheduler.log`. On failure, recorded in `fetch_history` / `UserEmailHistory` with `success=0` and an `error_msg`.
+`async def upsert_opportunity(session, opp: Opportunity) -> tuple[Opportunity, bool]` — handles the dedup logic currently in `StateDB.store_opportunity` (composite_id + URL + title-similarity), translated to SQLAlchemy. Returns the (DB row, was_new).
 
-### 6.6 New: `web/cli.py`
+### 6.7 New: `web/cli.py`
 
-Click-based CLI with subcommands:
+Click-based CLI:
 
-- `python -m web.cli fetch` — manual one-shot fetch (bypasses scheduler).
-- `python -m web.cli email-digest [--user-id N | --all-due] [--test]` — manual digest send.
-- `python -m web.cli regenerate-history` — re-run history page generation.
+- `python -m web.cli fetch` — runs `fetch_runner.run_fetch(now=datetime.utcnow())`. Acquires `data/.fetch.lock` advisory file lock; refuses if held. Exit code 0 on success, non-zero on failure.
+- `python -m web.cli email-digest [--due | --user-email EMAIL] [--test]` — runs `email_dispatcher.dispatch_due_users` (default `--due`) or sends to a single user. `--test` sends only to the user's own email, skipping broadcast list and not writing `user_email_deliveries`.
+- `python -m web.cli regenerate-history` — re-runs the static history generator.
 - `python -m web.cli migrate-state-db` — wraps `scripts/migrate_state_db.py`.
 
-`fetch_now.sh` and `email_now.sh` become 2-line wrappers around these.
+`fetch_now.sh` and `email_now.sh` become 2-line wrappers around these subcommands.
 
-### 6.7 New: `web/routers/broadcast.py`
+### 6.8 New: `web/routers/broadcast.py`
 
-REST endpoints:
+REST endpoints (auth required except `/unsubscribe/{token}`):
 
 - `GET /api/v1/broadcast/recipients` — list current user's recipients.
-- `POST /api/v1/broadcast/recipients` — add (generates unsubscribe token).
+- `POST /api/v1/broadcast/recipients` — add (validates ≤25 active recipients per user; generates UUID4 unsubscribe token).
 - `DELETE /api/v1/broadcast/recipients/{id}` — remove.
-- `GET /unsubscribe/{token}` — public, no auth, marks recipient inactive and returns confirmation HTML.
+- `GET /unsubscribe/{token}` — public, no auth, marks recipient inactive, returns confirmation HTML.
 
-### 6.8 Deletions
+### 6.9 Modified: `web/services/email_scheduler.py`
 
-- `web/services/seed_opportunities.py` — bridge no longer needed.
-- `web/main.py:lifespan` — remove the `seed()` call.
-- `src/weekly_fetch.py::main` — keep file for now but `main()` becomes a thin wrapper over `web/cli.py fetch`.
-- `src/weekly_email.py::main` — same treatment.
-- `launchd/*.plist` — replace with a single plist that starts `uv run uvicorn web.main:app` as a long-running service.
+Rewrite `get_users_due_for_email` to honor `frequency` AND `day_of_week` AND `time_of_day` from `UserEmailPref`. Drop the assumption that `last_sent_at + N days` is enough.
+
+### 6.10 Refactor: `src/history_generator.py` boundary
+
+Currently hard-wired to `StateDB`. Extract a small `HistoryDataSource` protocol (just the methods the generator uses) and provide a `PlatformDBSource` implementation in `web/services/`. `HistoryGenerator` itself stays library code.
+
+### 6.11 Deletions
+
+- `web/services/seed_opportunities.py`
+- `web/main.py:lifespan` — remove `seed()` call AND `create_all()` call (the latter via §5.0)
+- `src/weekly_fetch.py::main` and `src/weekly_email.py::main` — replaced by deprecation stubs that print "use `python -m web.cli`" and exit non-zero. Other functions stay importable.
+- `launchd/com.boyu.funding-agent.weekly.plist` and `daily.plist` — replaced by two new plists that invoke `web/cli` subcommands.
 
 ## 7. Configuration changes
 
 ### 7.1 `web/config.py` additions
 
 ```python
-admin_user_id: int = 1
-admin_email: str = ""               # used to identify admin user on first run
-scheduler_enabled: bool = True       # set False for one-off CLI invocations
-fetch_cron_day_of_week: str = "thu"  # APScheduler cron syntax
-fetch_cron_hour: int = 12
-fetch_cron_minute: int = 0
-fetch_cron_timezone: str = "America/Denver"
-digest_check_interval_minutes: int = 60
+# Admin
+admin_email: str = ""                            # required at runtime
+# Filter thresholds (relocated from conf/filter.yaml)
+keyword_threshold: float = 0.3
+llm_threshold: float = 0.5
+borderline_min: float = 0.2
+borderline_max: float = 0.6
+# Database
+sqlite_busy_timeout_ms: int = 5000
+sqlite_wal_mode: bool = True
 ```
+
+(No scheduler settings — there is no in-process scheduler.)
 
 ### 7.2 `conf/filter.yaml` and `conf/sources/*.yaml::search_keywords`
 
-After migration, `conf/filter.yaml` becomes a **bootstrap-only artifact** — read once by the migration script when admin has no keywords yet, never read at runtime again. Same for `search_keywords` blocks inside `conf/sources/*.yaml`.
+After migration, both become **bootstrap-only artifacts** read once by the migration script and never again at runtime. The source URL list in `conf/sources/*.yaml` remains authoritative.
 
-The remainder of `conf/sources/*.yaml` (the source URLs themselves) stays authoritative.
+### 7.3 `Dockerfile.web` and `docker-compose.yml`
 
-### 7.3 `docker-compose.yml`
-
-Drop the `db` service, drop `DATABASE_URL` override (default in-container path = `sqlite+aiosqlite:////data/platform.db`), mount `./data` as a volume for persistence.
+- `Dockerfile.web:18` — drop the Postgres-related installs.
+- `docker-compose.yml:20` — drop the `db` service and Postgres env vars; mount `./data` as a volume; default `DATABASE_URL` to SQLite.
+- Add a small sidecar container (or document how to set up host cron) that runs the launchd-equivalent CLI invocations on a schedule. For now, document the pattern; users on Mac use launchd, users on Linux use cron.
 
 ### 7.4 Environment variables
 
-Drop: `DATABASE_URL` (default to SQLite path).
-Keep: `OPENAI_API_KEY`, `GMAIL_ADDRESS`, `GMAIL_APP_PASSWORD`, `JWT_SECRET_KEY`, `GRANTS_GOV_API_KEY`.
+- New: `ADMIN_EMAIL` (required for migration script + keyword sync).
+- Drop: `DATABASE_URL` (default to SQLite path).
+- Keep: `OPENAI_API_KEY`, `GMAIL_ADDRESS`, `GMAIL_APP_PASSWORD`, `JWT_SECRET_KEY`, `GRANTS_GOV_API_KEY`.
 
 ## 8. Error handling and observability
 
-- **Fetch failures**: Per-source exceptions caught in `fetch_runner` (already done via `asyncio.gather(return_exceptions=True)`). Source-level failure recorded in `fetch_history`. Pipeline continues with surviving sources.
-- **Summarizer failures**: Already retried via `tenacity` in `src/summarizer`. Fallback: store opportunity with empty summary and a `summary_pending=True` flag (new field) for retry later.
-- **Email send failures**: Per-recipient try/except. One bounce doesn't fail the whole batch. Logged + recorded in `UserEmailHistory`.
-- **APScheduler failures**: Job exceptions logged at ERROR. Misfire grace period 1 hour. If FastAPI restarts mid-job, the job re-runs at the next scheduled time (no resume — fetches are idempotent on dedup).
-- **Logging**: Structured logs to `outputs/logs/` (existing) plus stdout. Log levels: `INFO` for milestones, `WARNING` for per-source failures, `ERROR` for job-level failures.
+- **Fetch failures**: per-source exceptions caught in `fetch_runner` (already done via `asyncio.gather(return_exceptions=True)`). Source-level failure recorded in `fetch_history`. Pipeline continues with surviving sources.
+- **Summarizer failures**: already retried via `tenacity`. Fallback: store opportunity with empty `summary` and skip the row in digest until the summary arrives in a later run (no `summary_pending` column needed — empty summary is the signal).
+- **Email send failures**: per-recipient try/except. One bounce doesn't fail the batch. `UserEmailHistory` row records `success=false` with `error_msg`.
+- **CLI exit codes**: 0 success, 1 partial failure, 2 fatal. launchd's `StandardErrorPath` captures stderr.
+- **Failure alerting (new)**: when `web.cli fetch` exits non-zero or zero-stored-with-zero-success-sources, an alert email goes to `admin_email` (uses the same Gmail SMTP). Cheap; saves the user from "noticing on Friday morning."
+- **Lock contention**: `web.cli fetch` refuses to start if `data/.fetch.lock` is held by a running process. Stale lock detection via PID check.
+- **Logging**: structured logs to `outputs/logs/cli-{fetch,email}.log` plus stdout. INFO for milestones, WARNING for per-source failures, ERROR for job-level failures.
+- **Backups**: SQLite backup via `sqlite3 data/platform.db ".backup data/backups/platform-YYYYMMDD.db"` from a daily launchd plist; keep last 14. Documented in README.
 
 ## 9. Testing strategy
 
 ### 9.1 Unit tests (new + ported)
 
-- `tests/test_keyword_sync.py` — admin keyword edits propagate to `system_*` tables; non-admin edits don't.
+- `tests/test_keyword_sync.py` — admin keyword edits propagate via `after_flush`; non-admin edits don't; rollback of parent tx rolls back the sync.
 - `tests/test_opportunity_writer.py` — dedup logic (composite_id, URL, title similarity).
-- `tests/test_fetch_runner.py` — mocked fetchers + filter; assert pipeline order, dedup, summarization.
-- `tests/test_email_dispatcher.py` — mocked SMTP; verify recipient expansion (user + broadcast list), unsubscribe token rendering, `mark_emailed` called.
-- `tests/test_broadcast.py` — REST CRUD, unsubscribe flow.
+- `tests/test_fetch_runner.py` — mocked fetchers + filter; assert pipeline order, dedup, summarization, auto-score invocation, multi-session boundaries (no session held across LLM calls).
+- `tests/test_email_dispatcher.py` — mocked SMTP; verify recipient expansion (user + broadcast list), unsubscribe token rendering, `user_email_deliveries` insertions, NOT re-sending to a user who already received an opp.
+- `tests/test_email_scheduler_due_logic.py` — `day_of_week` and `time_of_day` honored.
+- `tests/test_broadcast.py` — REST CRUD, recipient cap (25), unsubscribe flow.
+- `tests/test_auto_scorer.py` — newly-stored opps get a `UserOpportunityScore` row per active user.
 - Existing `tests/test_filter.py`, `tests/test_fetchers.py`, `tests/test_emailer.py` — should pass unchanged (they test `src/` library code).
 - `tests/test_phase{1..4}.py` — review and port any state.db-specific assertions to platform.db.
 
 ### 9.2 Integration tests
 
-- `tests/test_consolidated_pipeline.py` — end-to-end: trigger `fetch_runner.run_fetch` against a SQLite fixture, assert opportunities written, assert digest rendered, assert history regenerated.
-- `tests/test_migration.py` — feed a fixture `state.db`, run `migrate_state_db.py` against an empty `platform.db`, assert row counts and field mappings.
+- `tests/test_consolidated_pipeline.py` — end-to-end: invoke `web/cli fetch` against a SQLite fixture; assert opportunities written, scores computed, digest renderable.
+- `tests/test_migration.py` — feed a fixture `state.db`, run `migrate_state_db.py` against an empty `platform.db`, assert row counts and field mappings, including `user_email_deliveries` for the admin user from the old `status='emailed'` rows.
+- `tests/test_concurrent_fetch_lock.py` — second `web.cli fetch` invocation refuses while first holds the lock.
 
 ### 9.3 Manual verification
 
-- Run `python -m web.cli fetch` against staging DB; eyeball the digest HTML.
-- Add a test broadcast recipient, send digest, click unsubscribe link, confirm row marked inactive.
-- Restart FastAPI; confirm scheduler picks up jobs without firing immediately.
+- Run `python -m web.cli fetch` against a staging copy; eyeball the digest HTML.
+- Add a test broadcast recipient, send digest with `--test`, click unsubscribe, confirm row marked inactive.
+- Restart FastAPI; confirm no scheduler activity (since none exists).
+- Disable launchd plists and verify no scheduled fetches occur.
 
 ## 10. Migration plan
 
-Sequential rollout, single environment (no canary):
-
 1. **Branch.** `git checkout -b consolidate-pipeline-platform`.
-2. **Schema first.** Generate Alembic migration for new tables + column adds. Run on a copy of `platform.db`. Verify schema.
-3. **Code in pieces** (each piece testable in isolation):
+2. **§5.0 schema reconciliation first** (separate commit):
+   1. Update `alembic.ini` to SQLite.
+   2. Generate baseline Alembic revision capturing current ORM.
+   3. Generate `001_baseline_reconciliation` adding columns missing in live `platform.db`.
+   4. Remove `create_all()` from `web/main.py:18` lifespan.
+   5. Run on a copy of `platform.db`. Verify schema. Land the commit.
+3. **Code in pieces** (each its own PR or commit, testable in isolation):
    1. `keyword_sync.py` + tests.
    2. `opportunity_writer.py` + tests.
-   3. `fetch_runner.py` + tests.
-   4. `email_dispatcher.py` + tests.
-   5. `scheduler.py` + tests.
-   6. `cli.py` + tests.
-   7. `routers/broadcast.py` + tests.
-4. **Migration script.** Write `migrate_state_db.py`. Test against a copy of production `state.db`.
-5. **Wire into `main.py`.** Add scheduler to lifespan; remove `seed()` call.
-6. **Cutover** (single window, ideally Friday morning so first new-system fetch is the following Thursday):
-   - Stop existing launchd jobs (`launchctl unload`).
-   - Stop FastAPI.
-   - Back up `data/`.
-   - Run `python -m web.cli migrate-state-db`.
-   - Start FastAPI with new code (scheduler kicks in).
-   - Run `python -m web.cli fetch` once manually to verify; eyeball digest output.
-7. **Update launchd.** Replace two task plists with one service plist that runs `uv run uvicorn web.main:app`.
-8. **Watch first scheduled fetch** (Thursday noon MT). Verify digest (Thursday 8 PM MT).
-9. **Delete `seed_opportunities.py`** and other obsolete code. Commit cleanup separately.
-10. **Archive** `data/state.db.legacy` after 30 days of clean operation.
+   3. `auto_scorer.py` + tests.
+   4. `email_compose_adapter.py` + `HistoryDataSource` protocol.
+   5. `email_scheduler.py` due-logic rewrite + tests.
+   6. `fetch_runner.py` + tests.
+   7. `email_dispatcher.py` + tests.
+   8. `cli.py` + lock file handling + tests.
+   9. `routers/broadcast.py` + tests.
+4. **Migration script** (`scripts/migrate_state_db.py`) + tests against a copy of production `state.db`.
+5. **Wire into `main.py`.** Drop `seed()` call. (No scheduler to wire — that's the whole point.)
+6. **Cutover** (single window, ideally Friday morning so the first new-system fetch is the following Thursday):
+   1. `launchctl unload` both old plists. **Verify** with `pgrep -f weekly_fetch` and `pgrep -f weekly_email` that no processes are running. Wait if they are.
+   2. Stop FastAPI.
+   3. Back up `data/` (`cp -a data data.bak.YYYYMMDD`).
+   4. Run `python -m web.cli migrate-state-db`. Verify counts and assertions.
+   5. Start FastAPI (no scheduler activity expected).
+   6. Smoke: `python -m web.cli fetch` (manual, end-to-end). Eyeball summarized digest output. Check `user_email_deliveries` and `fetch_history` rows.
+   7. Smoke: `python -m web.cli email-digest --user-email ${ADMIN_EMAIL} --test`. Eyeball the email.
+   8. **Only after smokes pass**: `mv data/state.db data/state.db.legacy`.
+   9. Install new launchd plists. `launchctl load` them. Confirm next-trigger times via `launchctl print`.
+7. **Watch first scheduled fetch** (Thursday noon MT). Verify digest (Thursday 8 PM MT).
+8. **Delete `seed_opportunities.py`** and other obsolete code as cleanup commits.
+9. **Archive** `data/state.db.legacy` after 30 days of clean operation.
 
 ## 11. Risks and mitigations
 
 | Risk | Likelihood | Impact | Mitigation |
 |------|-----------|--------|-----------|
-| Migration loses opportunities | Low | High | Dry-run on copy; row-count assertions; keep `state.db.legacy` |
-| APScheduler misfires (job runs late or twice) | Medium | Low | Dedup on `composite_id` makes double-fetch a no-op; misfire grace 1h |
-| FastAPI crash → no scheduled fetch | Low | Medium | Add a launchd `KeepAlive` directive; missed fetch next week catches up via 7-day window |
-| Per-user digest sends to wrong users | Low | High | Test coverage on recipient expansion; staging dry-run |
-| SQLite `database is locked` under concurrent writes | Medium | Low | WAL mode + `PRAGMA busy_timeout=5000`; serialize fetch writes within a single transaction |
-| Admin keyword edit doesn't propagate to `system_*` | Medium | Medium | Idempotent sync at fetch start as backstop; explicit test |
-| Broadcast unsubscribe link leaks (token guessable) | Low | Medium | UUID4 tokens; not enumerable |
+| Migration loses opportunities | Low | High | Dry-run on copy; row-count assertions; keep `state.db.legacy` 30 days |
+| Schema reconciliation fights Alembic autogenerate (column type mismatches) | Medium | Medium | Run autogenerate against a copy of live `platform.db`; review SQL by hand before applying |
+| Two `web.cli fetch` invocations race | Low | Medium | File-lock at `data/.fetch.lock` with PID check |
+| FastAPI multi-worker breaks something | Low | Low | Architecture explicitly avoids in-process scheduling; SQLite WAL allows concurrent read; documented in README |
+| Per-user digest sends to wrong users | Low | High | Test coverage on recipient expansion; staging dry-run; `--test` mode skips `user_email_deliveries` writes |
+| SQLite `database is locked` under fetch + heavy web read | Medium | Low | WAL mode + `PRAGMA busy_timeout=5000`; per-batch transactions in fetch_runner |
+| Admin keyword edit doesn't propagate to `system_*` | Low | Medium | Idempotent re-sync at fetch start as backstop; explicit test |
+| Broadcast unsubscribe link guessable | Low | Medium | UUID4 tokens; not enumerable |
+| `auto_scorer` slow with many users | Medium | Low | Score in batches; only newly-stored opps; user count is small in v1 |
+| Event-loop blocking from sync OpenAI calls | n/a | n/a | Architecture mitigation: CLI process per job, no event loop to block |
 
-## 12. Open questions for the reviewer
+## 12. Open questions — resolutions
 
-1. **APScheduler vs cron-hits-endpoint for v1** — settled on APScheduler, but if there's a deployment concern (e.g., planned multi-worker uvicorn), revisit.
-2. **Broadcast list size cap?** Should we limit to e.g. 25 recipients per user to discourage spam-list misuse?
-3. **Admin-user identification on fresh installs.** Current proposal: `ADMIN_USER_ID=1` env var defaulting to first registered user. Should we instead require an explicit `ADMIN_EMAIL` and look up the ID at runtime?
-4. **Should `email_dispatcher` regenerate the static history page after every per-user send, or only after the admin's send?** Current proposal: every send. Cheap; ensures freshness.
-5. **The `system_filter_keywords` exclusion category for non-admin users (Project B prep)**: should other users' personal exclusions also propagate, or stay user-local? Current proposal: stay user-local; system-level exclusions remain admin-only.
+(Original v1 questions, now answered per Codex review.)
+
+1. **APScheduler vs cron-hits-endpoint vs launchd-CLI** — **launchd → `python -m web.cli`** wins. Avoids event-loop blocking and multi-worker coordination problems that come with in-process schedulers.
+2. **Broadcast list cap** — **25 active recipients per user** in v1 (current static list has 5; 25 is generous without enabling spam).
+3. **Admin identification on fresh installs** — `ADMIN_EMAIL` env var resolved to `users.id` at runtime; the user's `is_admin` flag (already at `web/models/user.py:25`) is the persistent marker. No `ADMIN_USER_ID=1`.
+4. **Static history regen frequency** — only after the **admin's** digest send, not per-user. Per-user freshness lives in the in-app authenticated view backed by `user_email_deliveries`.
+5. **Non-admin exclusions** — stay user-local. Promoting one user's exclusions to system scope is a product bug. `web/services/scoring.py:317` already supports per-user exclusion via `UserKeyword.category='exclusion'`.
 
 ## 13. Appendix — file-level change summary
 
@@ -441,29 +521,41 @@ Sequential rollout, single environment (no canary):
 - `web/services/email_dispatcher.py`
 - `web/services/keyword_sync.py`
 - `web/services/opportunity_writer.py`
-- `web/scheduler.py`
+- `web/services/email_compose_adapter.py`
+- `web/services/auto_scorer.py`
 - `web/cli.py`
 - `web/routers/broadcast.py`
 - `web/models/broadcast.py`
 - `web/models/system_keywords.py`
 - `web/models/source_bootstrap.py`
 - `web/models/fetch_history.py`
+- `web/models/user_email_delivery.py`
 - `scripts/migrate_state_db.py`
-- `alembic/versions/<timestamp>_consolidate_schema.py`
+- `alembic/versions/<ts>_baseline.py` (reconciliation)
+- `alembic/versions/<ts>_consolidate_schema.py`
+- `launchd/com.boyu.funding-agent.fetch.plist` (new)
+- `launchd/com.boyu.funding-agent.email.plist` (new)
+- `launchd/com.boyu.funding-agent.backup.plist` (new, daily DB backup)
 - Tests (see §9)
 
 **Modified**
-- `web/main.py` — add scheduler to lifespan; drop `seed()` call.
-- `web/config.py` — add admin/scheduler settings.
-- `web/models/opportunity.py` — verify all `state.db` columns are present.
-- `pyproject.toml` — add `apscheduler`, `click`; remove `asyncpg`.
-- `docker-compose.yml` — drop `db` service.
+- `alembic.ini` — SQLite URL.
+- `web/main.py` — drop `seed()` call AND `create_all()` call.
+- `web/config.py` — add admin/threshold settings.
+- `web/services/email_scheduler.py` — rewrite due logic to honor `day_of_week`/`time_of_day`.
+- `src/history_generator.py` — accept a `HistoryDataSource` protocol.
+- `pyproject.toml` — add `apscheduler` no longer needed; add `click` for the CLI.
+- `Dockerfile.web` — drop Postgres installs.
+- `docker-compose.yml` — drop `db` service; SQLite default.
 - `scripts/fetch_now.sh`, `scripts/email_now.sh` — 2-line wrappers around `web/cli.py`.
-- `launchd/*.plist` — replace with single FastAPI service plist.
 - `README.md`, `CLAUDE.md` — reflect single-system architecture.
 
 **Deleted**
 - `web/services/seed_opportunities.py`
+- `launchd/com.boyu.funding-agent.weekly.plist`
+- `launchd/com.boyu.funding-agent.daily.plist`
 
-**Archived (kept as-is for now; library only)**
-- `src/weekly_fetch.py`, `src/weekly_email.py` — `main()` becomes a deprecation notice pointing to `web/cli.py`. Other functions remain importable from `web/services/fetch_runner.py`.
+**Library, kept as-is or near-as-is**
+- `src/fetcher/*`, `src/filter/*`, `src/summarizer.py`, `src/emailer.py`, `src/models.py`, `src/utils.py` — pure library code; no DB coupling.
+- `src/weekly_fetch.py::main` and `src/weekly_email.py::main` — replaced with deprecation stubs; importable functions stay.
+- `src/state.py` — kept for migration script's read path; deleted after legacy archive period.
