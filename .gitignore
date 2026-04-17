@@ -38,3 +38,6 @@ frontend/dist/
 # OS files
 .DS_Store
 .Rhistory
+
+# Git worktrees
+.worktrees/
