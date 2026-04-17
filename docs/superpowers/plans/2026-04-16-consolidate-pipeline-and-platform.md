@@ -108,9 +108,21 @@ Remove lines 19-27 of `web/main.py` (the `Base.metadata.create_all` block and th
 
 - [ ] **Step 4: Generate the baseline migration**
 
+Note: `alembic/env.py:19` reads the URL from `alembic.ini` (not from `DATABASE_URL`). Step 2 already pointed `alembic.ini` at the live `data/platform.db`. To autogenerate against the safe **copy** instead, temporarily change the URL or use `-x url=...`:
+
 ```bash
-DATABASE_URL="sqlite+aiosqlite:///data/platform.db.before-reconcile" \
-  uv run alembic revision --autogenerate -m "baseline"
+uv run alembic -x url=sqlite+aiosqlite:///data/platform.db.before-reconcile \
+  revision --autogenerate -m "baseline"
+```
+
+If `alembic/env.py` doesn't yet honor `-x url=...`, add this single line near the top of `run_async_migrations` (before the engine creation):
+
+```python
+section = config.get_section(config.config_ini_section, {})
+if config.cmd_opts and getattr(config.cmd_opts, "x", None):
+    overrides = dict(opt.split("=", 1) for opt in config.cmd_opts.x if "=" in opt)
+    if "url" in overrides:
+        section["sqlalchemy.url"] = overrides["url"]
 ```
 
 Inspect the generated file in `alembic/versions/`. It should reflect the *current ORM state* (all existing tables). If autogenerate produces unwanted DROP statements (because the live DB has extra columns), edit those out — keep only CREATE/ADD operations that match the ORM.
@@ -129,11 +141,11 @@ Inside the generated file's `upgrade()`, add `op.add_column(...)` calls for any 
 
 ```bash
 cp data/platform.db data/platform.db.bak
-DATABASE_URL="sqlite+aiosqlite:///data/platform.db" uv run alembic stamp <baseline_revision_id>
-DATABASE_URL="sqlite+aiosqlite:///data/platform.db" uv run alembic upgrade head
+uv run alembic stamp <baseline_revision_id>
+uv run alembic upgrade head
 ```
 
-Verify: `sqlite3 data/platform.db ".schema opportunities"` shows the missing columns.
+(No `DATABASE_URL=` prefix needed — `alembic.ini` was permanently changed in Step 2.) Verify: `sqlite3 data/platform.db ".schema opportunities"` shows the missing columns.
 
 - [ ] **Step 7: Smoke-start FastAPI and confirm it boots without `create_all`**
 
@@ -610,15 +622,44 @@ async def upsert_opportunity(db: AsyncSession, opp: "OppDC") -> tuple[OppRow, bo
     return row, True
 ```
 
-- [ ] **Step 3: Add `db_session` fixture if not present**
+- [ ] **Step 3: Create `tests/conftest.py` with shared async fixtures**
 
-Check `tests/conftest.py` for an `async db_session` fixture wired to an in-memory or temp SQLite. If absent, add one that:
-- Creates a temp SQLite file
-- Runs `Base.metadata.create_all(sync_conn)`
-- Yields a session
-- Cleans up
+`tests/conftest.py` does **not** exist today; each test file (e.g., `tests/test_phase1.py`) hand-rolls its own engine and session. Consolidate into a shared conftest now to avoid duplication across all the new test files this plan adds:
 
-(Quick block — see existing `tests/test_phase*.py` for patterns the project already uses.)
+```python
+# tests/conftest.py
+from __future__ import annotations
+import pytest
+import pytest_asyncio
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+
+from web.database import Base
+import web.models  # noqa: F401 — register all model tables on Base
+
+TEST_DB_URL = "sqlite+aiosqlite:///:memory:"
+
+
+@pytest_asyncio.fixture
+async def db_session() -> AsyncSession:
+    engine = create_async_engine(TEST_DB_URL, echo=False)
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    Session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+    async with Session() as session:
+        yield session
+    await engine.dispose()
+
+
+@pytest_asyncio.fixture
+async def admin_user(db_session):
+    from web.models.user import User
+    u = User(email="admin@test", password_hash="x", full_name="Admin", is_admin=True, is_active=True)
+    db_session.add(u)
+    await db_session.flush()
+    return u
+```
+
+Verify by running any existing test: `uv run pytest tests/test_filter.py -v`.
 
 - [ ] **Step 4: Run tests, verify pass, commit**
 
@@ -852,11 +893,33 @@ git commit -m "feat: keyword_sync with after_flush listener and idempotent resyn
 
 **Goal:** After new opps are written, compute `UserOpportunityScore` for each active user using existing `web/services/scoring.py`.
 
+**⚠️ Reality check:** `web/services/scoring.py` only exposes `score_opportunity_for_user(db, user_id, opportunity_id)` (line 308) and `score_all_opportunities_for_user(db, user_id)` (line 407). There is no bulk-by-id helper. Task 7 must add one before the auto_scorer can use it.
+
 **Files:**
+- Modify: `web/services/scoring.py` — add `score_opportunities_for_user(db, user_id, opportunity_ids)` that loops `score_opportunity_for_user`
 - Create: `web/services/auto_scorer.py`
 - Test: `tests/test_auto_scorer.py`
 
-- [ ] **Step 1: Write failing test**
+- [ ] **Step 1: Add the bulk-by-id helper to `web/services/scoring.py`**
+
+Append to the file:
+
+```python
+async def score_opportunities_for_user(
+    db: AsyncSession, user_id, opportunity_ids: list
+) -> int:
+    """Score a specific list of opportunities for one user. Returns count scored."""
+    n = 0
+    for oid in opportunity_ids:
+        try:
+            await score_opportunity_for_user(db, user_id, oid)
+            n += 1
+        except Exception:
+            logger.exception(f"score_opportunities_for_user: failed user={user_id} opp={oid}")
+    return n
+```
+
+- [ ] **Step 2: Write failing test**
 
 ```python
 # tests/test_auto_scorer.py
@@ -885,7 +948,7 @@ async def test_scores_new_opps_for_each_active_user(db_session):
 
 Run: FAIL.
 
-- [ ] **Step 2: Implement `web/services/auto_scorer.py`**
+- [ ] **Step 3: Implement `web/services/auto_scorer.py`**
 
 ```python
 from __future__ import annotations
@@ -895,7 +958,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from web.models.user import User
-from web.services.scoring import score_user_opportunities
+from web.services.scoring import score_opportunities_for_user
 
 logger = logging.getLogger(__name__)
 
@@ -909,19 +972,17 @@ async def score_new_opportunities(db: AsyncSession, opportunity_ids: list[uuid.U
     )).scalars().all()
     for user in users:
         try:
-            await score_user_opportunities(db, user.id, only_opportunity_ids=opportunity_ids)
+            await score_opportunities_for_user(db, user.id, opportunity_ids)
         except Exception:
             logger.exception(f"auto_scorer: failed for user {user.id}")
 ```
 
-> **Note:** `score_user_opportunities` is the existing async entry point in `web/services/scoring.py`. Verify its signature; if it doesn't accept `only_opportunity_ids`, extend it (small, additive change) so we can scope work to the new opps.
-
-- [ ] **Step 3: Run test, commit**
+- [ ] **Step 4: Run test, commit**
 
 ```bash
 uv run pytest tests/test_auto_scorer.py -v
-git add web/services/auto_scorer.py tests/test_auto_scorer.py web/services/scoring.py
-git commit -m "feat: auto_scorer scores new opps for all active users"
+git add web/services/auto_scorer.py web/services/scoring.py tests/test_auto_scorer.py
+git commit -m "feat: auto_scorer + bulk-by-id helper in scoring.py"
 ```
 
 ---
@@ -1560,6 +1621,28 @@ async def _dispatch_one(s, user, settings) -> DispatchResult:
     ))
     pref.last_sent_at = datetime.now(timezone.utc)
     return DispatchResult(user.id, len(new_ids), success)
+
+
+async def dispatch_one_user(user_email: str, *, test_mode: bool = False) -> list[DispatchResult]:
+    """Dispatch a digest to a single user identified by email. Used by `web.cli email-digest --user-email`.
+
+    test_mode=True skips broadcast list expansion and skips writing user_email_deliveries
+    (so the same opps remain unsent for the next real run).
+    """
+    settings = get_settings()
+    async with async_session() as s:
+        user = (await s.execute(
+            select(User).where(User.email == user_email, User.is_active.is_(True))
+        )).scalar_one()
+        # Reuse _dispatch_one but optionally short-circuit broadcast/persistence
+        # by passing flags. (Implementer: add `test_mode` kwarg threading to
+        # _dispatch_one so it skips bcasts and skips s.add(UserEmailDelivery(...)).)
+        res = await _dispatch_one(s, user, settings, test_mode=test_mode)
+        if not test_mode:
+            await s.commit()
+        else:
+            await s.rollback()
+    return [res]
 ```
 
 > **Note:** `Emailer.compose()` doesn't currently accept an `unsubscribe_token` kwarg. Either (a) add it to `compose()` as a small additive change and render `{% if unsubscribe_token %}<a href="{{base}}/unsubscribe/{{token}}">unsubscribe</a>{% endif %}` in `templates/digest.html`, or (b) post-process the HTML by string substitution. Prefer (a) — the change is local and tested.
