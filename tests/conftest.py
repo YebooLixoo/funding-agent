@@ -39,6 +39,12 @@ async def db_session(monkeypatch) -> AsyncSession:
     except ImportError:
         # email_dispatcher may not exist yet during earlier-task imports
         pass
+    try:
+        import scripts.migrate_state_db as _mig_mod
+        monkeypatch.setattr(_mig_mod, "async_session", Session, raising=False)
+    except ImportError:
+        # migrate_state_db may not exist yet during earlier-task imports
+        pass
 
     async with Session() as session:
         yield session
