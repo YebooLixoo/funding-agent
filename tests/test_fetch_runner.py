@@ -5,6 +5,12 @@ multi-session boundary contract by patching the remote-I/O helpers
 (``_collect_opportunities``, ``_summarize_batch``, ``_filter_opps``) and
 asserting the DB-side behavior: opportunity upsert, auto-scoring, and
 ``fetch_history`` recording.
+
+Bootstrap correctness is NOT directly exercised here — it now requires that
+a source actually return >=1 opportunity in the run (Codex feedback on
+commit 89bb5e2). See ``_collect_opportunities``'s ``sources_with_results``
+set and ``_mark_bootstraps``. Add a dedicated test if bootstrap regressions
+are observed in production.
 """
 
 from __future__ import annotations

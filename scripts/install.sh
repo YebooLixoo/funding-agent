@@ -8,6 +8,16 @@ LAUNCH_AGENTS_DIR="$HOME/Library/LaunchAgents"
 
 echo "Installing funding-agent LaunchAgents..."
 
+# Retire legacy plists if present (post-consolidation cutover). Idempotent —
+# safe to run on a clean machine where these were never installed.
+for legacy in com.boyu.funding-agent.daily.plist com.boyu.funding-agent.weekly.plist; do
+    if [ -f "$LAUNCH_AGENTS_DIR/$legacy" ]; then
+        echo "Retiring legacy: $legacy"
+        launchctl unload "$LAUNCH_AGENTS_DIR/$legacy" 2>/dev/null || true
+        rm -f "$LAUNCH_AGENTS_DIR/$legacy"
+    fi
+done
+
 # Ensure log directory exists
 mkdir -p "$PROJECT_DIR/outputs/logs"
 

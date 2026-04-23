@@ -72,7 +72,7 @@ async def run_fetch(now: datetime | None = None) -> FetchResult:
     window_start = last_thursday_noon_mt()
     window_end = now_dt
 
-    raw_opps, errors, executed_sources = await _collect_opportunities(
+    raw_opps, errors, sources_with_results = await _collect_opportunities(
         by_source, window_start, window_end, settings
     )
     raw_opps = _batch_dedup(raw_opps)
@@ -84,7 +84,12 @@ async def run_fetch(now: datetime | None = None) -> FetchResult:
 
     # Phase 4 — auto-score, bootstrap-mark, history
     fh_id = await _record_run(
-        stored_ids, window_start, window_end, errors, by_source, executed_sources
+        stored_ids,
+        window_start,
+        window_end,
+        errors,
+        by_source,
+        sources_with_results,
     )
 
     return FetchResult(
@@ -301,12 +306,23 @@ async def _collect_opportunities(by_source, window_start, window_end, settings):
 
     opps: list = []
     errors: list[str] = []
+    # Bootstrap-marking signal (Codex review of commit 89bb5e2): a source only
+    # counts as "successfully bootstrapped" if it actually returned at least
+    # one opportunity. ``executed_source_names`` is too generous — several
+    # fetchers (NSFFetcher, WebScraperFetcher) catch internal exceptions and
+    # return ``[]`` instead of raising, so they appear "successful" to
+    # ``_safe_fetch`` even when nothing was fetched. A legitimately empty
+    # source can re-bootstrap on the next run with no harm; bootstrap state
+    # only controls whether a date floor is applied, not data correctness.
+    sources_with_results: set[str] = set()
     compute_index = {s["name"]: s for s in compute_sources}
     for name, batch_or_err in raw_results:
         if isinstance(batch_or_err, Exception):
             errors.append(f"{name}: {batch_or_err}")
             logger.error("Fetch error for %s: %s", name, batch_or_err)
         else:
+            if batch_or_err:
+                sources_with_results.add(name)
             for opp in batch_or_err:
                 opps.append(_enrich_compute(opp, compute_index))
 
@@ -322,7 +338,7 @@ async def _collect_opportunities(by_source, window_start, window_end, settings):
         except Exception:
             logger.debug("close() failed for scraper", exc_info=True)
 
-    return opps, errors, executed_source_names
+    return opps, errors, sources_with_results
 
 
 async def _safe_fetch(name: str, coro):
@@ -433,7 +449,7 @@ async def _record_run(
     window_end: datetime,
     errors: list[str],
     by_source: dict[str, list[str]],
-    executed_sources: set[str],
+    sources_with_results: set[str],
 ) -> int | None:
     """Score new opps, mark successful sources as bootstrapped, write history."""
     fh_id: int | None = None
@@ -441,12 +457,13 @@ async def _record_run(
         if stored_ids:
             await score_new_opportunities(s, stored_ids)
 
-        # Bootstrap marking: a source counts as "successfully fetched" only if
-        # it actually executed AND did not raise. Sources that were skipped
-        # (no terms, not enabled, etc.) are NOT marked bootstrapped here.
-        # Ports ``src/state.py::mark_source_bootstrapped`` +
-        # ``src/weekly_fetch.py::_mark_bootstrapped``.
-        await _mark_bootstraps(s, errors, executed_sources)
+        # Bootstrap marking: a source counts as "successfully bootstrapped"
+        # only if it actually returned at least one opportunity in this run.
+        # Sources that were skipped (no terms, not enabled, etc.) or that
+        # silently returned ``[]`` (NSFFetcher / WebScraperFetcher swallow
+        # their own exceptions) are NOT marked here. See Codex review of
+        # commit 89bb5e2.
+        await _mark_bootstraps(s, errors, sources_with_results)
 
         fh = FetchHistory(
             source="all",
@@ -464,18 +481,23 @@ async def _record_run(
 
 
 async def _mark_bootstraps(
-    s, errors: list[str], executed_sources: set[str]
+    s, errors: list[str], sources_with_results: set[str]
 ) -> None:
     """Insert ``SourceBootstrap`` rows for sources that just fetched cleanly.
 
     The model treats row presence as "bootstrap complete" (no per-row state
     flag). We therefore only insert for sources that:
       1) appear in the YAML known-source list,
-      2) ACTUALLY EXECUTED this run (in ``executed_sources``) — not merely
-         "configured", since API tasks are skipped without terms and several
-         scrapers swallow exceptions and return ``[]``,
+      2) ACTUALLY RETURNED >=1 OPPORTUNITY this run (in
+         ``sources_with_results``). "Executed without raising" is too lax —
+         NSFFetcher and WebScraperFetcher catch internal exceptions and
+         return ``[]``, which would otherwise be marked bootstrapped despite
+         pulling nothing. (Codex review of commit 89bb5e2.)
       3) do NOT have a bootstrap row already, and
       4) do NOT appear in this run's per-source error list.
+
+    A legitimately empty source can re-bootstrap on the next run with no
+    harm — bootstrap state only controls whether a date floor is applied.
     """
     cfg = _load_yaml_sources()
     known = _collect_known_sources(cfg)
@@ -494,7 +516,7 @@ async def _mark_bootstraps(
         if (
             name in already
             or name in failed_sources
-            or name not in executed_sources
+            or name not in sources_with_results
         ):
             continue
         s.add(
