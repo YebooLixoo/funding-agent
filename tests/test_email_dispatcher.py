@@ -198,9 +198,11 @@ async def test_dispatch_skips_already_delivered_opps(db_session, admin_user):
 
 
 @pytest.mark.asyncio
-async def test_failed_send_does_not_mark_deliveries_or_advance_last_sent(
-    db_session, admin_user
-):
+async def test_send_failure_logs_but_keeps_deliveries(db_session, admin_user):
+    """With outbox pattern: deliveries persist even if SMTP fails. This is
+    intentional — better to miss a notification than to spam every hour after
+    a transient failure. The previous send-then-commit ordering left a hole
+    where a successful send + failed commit caused hourly re-sends."""
     pref = UserEmailPref(
         user_id=admin_user.id,
         is_subscribed=True,
@@ -231,18 +233,24 @@ async def test_failed_send_does_not_mark_deliveries_or_advance_last_sent(
     with patch("src.emailer.Emailer.send", return_value=False):  # SMTP failure
         result = await dispatch_one_user(admin_user.email, test_mode=False)
 
-    assert result[0].success is False
-    assert result[0].sent == 0
+    assert result[0].success is False  # owner send did fail
+    # Outbox already wrote the delivery row before attempting the send.
     deliveries = (
         await db_session.execute(select(UserEmailDelivery))
     ).scalars().all()
-    assert deliveries == []  # NO delivery rows on failure
+    assert len(deliveries) == 1
+    # And advanced ``last_sent_at`` so the next cron tick won't immediately retry.
+    # Drop the test session's identity-map cache — the dispatcher committed via
+    # a separate async session that shares this engine, so the in-memory
+    # ``UserEmailPref`` row in ``db_session`` still reflects the pre-dispatch
+    # state without an explicit expire.
     pref_after = (
         await db_session.execute(
             select(UserEmailPref).where(UserEmailPref.user_id == admin_user.id)
         )
     ).scalar_one()
-    assert pref_after.last_sent_at is None  # NOT advanced
+    await db_session.refresh(pref_after, attribute_names=["last_sent_at"])
+    assert pref_after.last_sent_at is not None
 
 
 @pytest.mark.asyncio

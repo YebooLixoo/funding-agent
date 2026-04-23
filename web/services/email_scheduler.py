@@ -9,6 +9,11 @@ from __future__ import annotations
 import logging
 from datetime import datetime, timedelta, timezone
 
+try:
+    from zoneinfo import ZoneInfo  # py3.9+
+except ImportError:  # pragma: no cover — py3.8 backport
+    from backports.zoneinfo import ZoneInfo  # type: ignore[no-redef]
+
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -22,6 +27,19 @@ logger = logging.getLogger(__name__)
 # Frequency name → days between sends. Used together with the scheduled slot
 # (day_of_week + time_of_day) to decide whether a user is due.
 _FREQUENCY_DAYS = {"daily": 1, "weekly": 7, "biweekly": 14}
+
+# Scheduling timezone. Users set ``time_of_day`` ("HH:MM") in the UI expecting
+# their local clock — anchor to Mountain Time to match
+# ``src/utils.py:last_thursday_noon_mt``. Without this, a user setting "20:00"
+# would fire at 20:00 UTC = 14:00 MDT, six hours early.
+SCHEDULER_TIMEZONE = ZoneInfo("America/Denver")
+
+
+def _to_local(dt: datetime) -> datetime:
+    """Convert ``dt`` to ``SCHEDULER_TIMEZONE``. Naive datetimes are treated as UTC."""
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(SCHEDULER_TIMEZONE)
 
 
 async def get_users_due_for_email(
@@ -42,6 +60,7 @@ async def get_users_due_for_email(
     """
     if now is None:
         now = datetime.now(timezone.utc)
+    now_local = _to_local(now)
 
     result = await db.execute(
         select(UserEmailPref).where(UserEmailPref.is_subscribed.is_(True))
@@ -53,18 +72,17 @@ async def get_users_due_for_email(
         gap = _FREQUENCY_DAYS.get(pref.frequency, 7)
         if pref.last_sent_at is not None:
             # SQLite drops tz info on round-trip; treat any naive datetime from
-            # the DB as UTC so the subtraction below is always well-defined.
-            last_sent = pref.last_sent_at
-            if last_sent.tzinfo is None:
-                last_sent = last_sent.replace(tzinfo=timezone.utc)
+            # the DB as UTC, then convert to local TZ so all arithmetic is
+            # done in a single zone (avoids DST-crossing edge cases).
+            last_local = _to_local(pref.last_sent_at)
             # Absolute next-send cutoff: after a send at ``last_sent`` with
             # frequency ``gap`` days, the next send is allowed at
             # ``last_sent + gap days`` (combined with the slot check below).
             # This avoids the off-by-one ``elapsed_days < gap - 1`` bug that
             # made daily users due every hour after their first send.
-            if now < last_sent + timedelta(days=gap):
+            if now_local < last_local + timedelta(days=gap):
                 continue
-        if not _now_is_at_or_after_scheduled_slot(pref, now):
+        if not _now_is_at_or_after_scheduled_slot(pref, now_local):
             continue
         due_user_ids.append(pref.user_id)
 
@@ -77,25 +95,37 @@ async def get_users_due_for_email(
     return list(user_result.scalars().all())
 
 
-def _now_is_at_or_after_scheduled_slot(pref: UserEmailPref, now: datetime) -> bool:
-    """True if ``now`` is past the scheduled slot for the current week.
+def _now_is_at_or_after_scheduled_slot(
+    pref: UserEmailPref, now_local: datetime
+) -> bool:
+    """True if ``now_local`` is past the scheduled slot for the current week.
 
-    The slot is ``day_of_week`` (0=Mon..6=Sun, matching Python's
-    ``datetime.weekday()``) at ``time_of_day`` ('HH:MM'). After that slot, the
-    user remains "due" through the rest of the week until their next frequency
-    window starts (gated by ``last_sent_at`` in the caller).
+    ``now_local`` MUST already be in ``SCHEDULER_TIMEZONE`` — callers go through
+    ``_to_local`` first.
+
+    For ``frequency="daily"``: ``day_of_week`` is ignored — the user is due
+    every day after ``time_of_day`` passes, gated only by the 24-hour window
+    in the caller. (Without this, a daily user with ``day_of_week=3`` would
+    be blocked Mon/Tue/Wed.)
+
+    For weekly/biweekly: the slot is ``day_of_week`` (0=Mon..6=Sun, matching
+    Python's ``datetime.weekday()``) at ``time_of_day`` ('HH:MM'). After that
+    slot, the user remains "due" through the rest of the week until their next
+    frequency window starts (gated by ``last_sent_at`` in the caller).
     """
     try:
         h, m = (int(x) for x in pref.time_of_day.split(":"))
     except (AttributeError, ValueError):
         # Defensive: treat malformed time_of_day as midnight.
         h, m = 0, 0
+    if pref.frequency == "daily":
+        return (now_local.hour, now_local.minute) >= (h, m)
     scheduled_dow = pref.day_of_week
-    today_dow = now.weekday()
+    today_dow = now_local.weekday()
     if today_dow < scheduled_dow:
         return False
     if today_dow == scheduled_dow:
-        return (now.hour, now.minute) >= (h, m)
+        return (now_local.hour, now_local.minute) >= (h, m)
     return True
 
 
