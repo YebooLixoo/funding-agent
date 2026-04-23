@@ -15,6 +15,10 @@ class Settings(BaseSettings):
     # Database
     database_url: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/funding_platform"
 
+    # SQLite tuning
+    sqlite_wal_mode: bool = True
+    sqlite_busy_timeout_ms: int = 5000
+
     # JWT
     secret_key: str = "CHANGE-ME-in-production"
     algorithm: str = "HS256"
