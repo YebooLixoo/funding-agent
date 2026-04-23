@@ -72,7 +72,7 @@ async def run_fetch(now: datetime | None = None) -> FetchResult:
     window_start = last_thursday_noon_mt()
     window_end = now_dt
 
-    raw_opps, errors = await _collect_opportunities(
+    raw_opps, errors, executed_sources = await _collect_opportunities(
         by_source, window_start, window_end, settings
     )
     raw_opps = _batch_dedup(raw_opps)
@@ -84,7 +84,7 @@ async def run_fetch(now: datetime | None = None) -> FetchResult:
 
     # Phase 4 — auto-score, bootstrap-mark, history
     fh_id = await _record_run(
-        stored_ids, window_start, window_end, errors, by_source
+        stored_ids, window_start, window_end, errors, by_source, executed_sources
     )
 
     return FetchResult(
@@ -160,6 +160,11 @@ async def _collect_opportunities(by_source, window_start, window_end, settings):
     api_fetchers: list = []
     scrapers: list = []
     compute_sources: list = []
+    # Source names for tasks that were actually scheduled to run. A name only
+    # ends up here if a coroutine was constructed and appended to ``tasks``;
+    # YAML-known sources skipped due to "no terms" / "not enabled" / etc.
+    # are NOT in this set, so they cannot be falsely marked bootstrapped.
+    executed_source_names: set[str] = set()
 
     gov_cfg = cfg.get("government", {}) or {}
 
@@ -177,6 +182,7 @@ async def _collect_opportunities(by_source, window_start, window_end, settings):
         api_fetchers.append(fetcher)
         ws = None if api_name in bootstrap_sources else window_start
         tasks.append(_safe_fetch(api_name, fetcher.fetch(ws, window_end, terms)))
+        executed_source_names.add(api_name)
 
     # Government web sources (DOE, USDOT, etc.)
     gov_scraper = None
@@ -199,6 +205,7 @@ async def _collect_opportunities(by_source, window_start, window_end, settings):
                 ),
             )
         )
+        executed_source_names.add(src["name"])
 
     # Industry web sources
     ind_scraper = None
@@ -219,6 +226,7 @@ async def _collect_opportunities(by_source, window_start, window_end, settings):
                 ),
             )
         )
+        executed_source_names.add(src["name"])
 
     # University internal sources
     uni_scraper = None
@@ -241,6 +249,7 @@ async def _collect_opportunities(by_source, window_start, window_end, settings):
                 ),
             )
         )
+        executed_source_names.add(src["name"])
 
     # Compute sources (curated metadata enriched after fetch)
     compute_scraper = None
@@ -265,6 +274,7 @@ async def _collect_opportunities(by_source, window_start, window_end, settings):
                     ),
                 )
             )
+            executed_source_names.add(src["name"])
 
     # Grants.gov approaching-deadlines pass (was missing from v1)
     grants_terms = by_source.get("grants_gov", [])
@@ -280,9 +290,10 @@ async def _collect_opportunities(by_source, window_start, window_end, settings):
                 ),
             )
         )
+        # Note: grants_gov_deadlines piggybacks on grants_gov bootstrap state.
 
     if not tasks:
-        return [], []
+        return [], [], set()
 
     # Per-source error isolation: ``_safe_fetch`` always returns ``(name, val)``
     # so ``return_exceptions=False`` is fine here.
@@ -311,7 +322,7 @@ async def _collect_opportunities(by_source, window_start, window_end, settings):
         except Exception:
             logger.debug("close() failed for scraper", exc_info=True)
 
-    return opps, errors
+    return opps, errors, executed_source_names
 
 
 async def _safe_fetch(name: str, coro):
@@ -422,6 +433,7 @@ async def _record_run(
     window_end: datetime,
     errors: list[str],
     by_source: dict[str, list[str]],
+    executed_sources: set[str],
 ) -> int | None:
     """Score new opps, mark successful sources as bootstrapped, write history."""
     fh_id: int | None = None
@@ -429,11 +441,12 @@ async def _record_run(
         if stored_ids:
             await score_new_opportunities(s, stored_ids)
 
-        # Bootstrap marking: any known source NOT present in errors counts as
-        # successfully fetched and gets a SourceBootstrap row (presence == done).
+        # Bootstrap marking: a source counts as "successfully fetched" only if
+        # it actually executed AND did not raise. Sources that were skipped
+        # (no terms, not enabled, etc.) are NOT marked bootstrapped here.
         # Ports ``src/state.py::mark_source_bootstrapped`` +
         # ``src/weekly_fetch.py::_mark_bootstrapped``.
-        await _mark_bootstraps(s, errors)
+        await _mark_bootstraps(s, errors, executed_sources)
 
         fh = FetchHistory(
             source="all",
@@ -450,14 +463,19 @@ async def _record_run(
     return fh_id
 
 
-async def _mark_bootstraps(s, errors: list[str]) -> None:
+async def _mark_bootstraps(
+    s, errors: list[str], executed_sources: set[str]
+) -> None:
     """Insert ``SourceBootstrap`` rows for sources that just fetched cleanly.
 
     The model treats row presence as "bootstrap complete" (no per-row state
     flag). We therefore only insert for sources that:
       1) appear in the YAML known-source list,
-      2) do NOT have a bootstrap row already, and
-      3) do NOT appear in this run's per-source error list.
+      2) ACTUALLY EXECUTED this run (in ``executed_sources``) — not merely
+         "configured", since API tasks are skipped without terms and several
+         scrapers swallow exceptions and return ``[]``,
+      3) do NOT have a bootstrap row already, and
+      4) do NOT appear in this run's per-source error list.
     """
     cfg = _load_yaml_sources()
     known = _collect_known_sources(cfg)
@@ -473,7 +491,11 @@ async def _mark_bootstraps(s, errors: list[str]) -> None:
 
     now_dt = datetime.now(timezone.utc)
     for name, stype in known:
-        if name in already or name in failed_sources:
+        if (
+            name in already
+            or name in failed_sources
+            or name not in executed_sources
+        ):
             continue
         s.add(
             SourceBootstrap(

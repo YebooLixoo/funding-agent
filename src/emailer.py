@@ -51,6 +51,7 @@ class Emailer:
         university_opps: Optional[list[dict]] = None,
         compute_opps: Optional[list[dict]] = None,
         unsubscribe_token: Optional[str] = None,
+        app_base_url: Optional[str] = None,
     ) -> str:
         """Compose HTML digest from template.
 
@@ -59,12 +60,17 @@ class Emailer:
             industry_opps: Industry opportunities grouped by source.
             upcoming_deadlines: Opportunities with upcoming deadlines.
             date_str: Date string for the subject line.
-            history_url: URL to the full opportunity history page.
+            history_url: URL to the full opportunity history page (read-only,
+                e.g., a GitHub Pages site).
             coming_soon_opps: Opportunities announced but not yet open.
             university_opps: University internal opportunities.
             unsubscribe_token: Optional broadcast-recipient token. When set,
                 an unsubscribe link is rendered in the footer (digests sent to
                 the owner themselves should leave this as ``None``).
+            app_base_url: Base URL of the deployed FastAPI backend
+                (e.g., ``https://api.example.com``). Used to build absolute
+                ``/unsubscribe/<token>`` links — must NOT be ``history_url``,
+                which typically points at a static read-only host.
 
         Returns:
             Rendered HTML string.
@@ -122,6 +128,7 @@ class Emailer:
             deadline_count=len(upcoming_deadlines),
             history_url=history_url,
             unsubscribe_token=unsubscribe_token,
+            app_base_url=app_base_url,
         )
 
         return html

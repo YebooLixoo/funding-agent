@@ -12,8 +12,9 @@ class Settings(BaseSettings):
     debug: bool = False
     api_prefix: str = "/api/v1"
 
-    # Database
-    database_url: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/funding_platform"
+    # Database — SQLite is the post-consolidation default (D8). The data/
+    # directory is created by scripts/start_platform.sh on first launch.
+    database_url: str = "sqlite+aiosqlite:///data/platform.db"
 
     # SQLite tuning
     sqlite_wal_mode: bool = True
@@ -47,6 +48,9 @@ class Settings(BaseSettings):
     borderline_max: float = 0.6
     llm_model: str = "gpt-5.2"
     history_url: str = ""
+    # Base URL of the deployed FastAPI backend (NOT the GitHub Pages history
+    # URL). Used to build absolute unsubscribe links inside broadcast digests.
+    app_base_url: str = "http://localhost:8000"
 
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8", "extra": "ignore"}
 

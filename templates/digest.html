@@ -376,7 +376,7 @@
     {% if unsubscribe_token %}
     <p style="text-align:center; font-size:11px; color:#999; margin-top:20px;">
       You're receiving this as part of a colleague's funding digest broadcast.
-      <a href="{{ history_url|default('') }}/unsubscribe/{{ unsubscribe_token }}">Unsubscribe</a>
+      <a href="{{ app_base_url|default('') }}/unsubscribe/{{ unsubscribe_token }}">Unsubscribe</a>
     </p>
     {% endif %}
   </div>

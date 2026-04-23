@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -13,6 +14,9 @@ from web.models.keyword import UserKeyword
 from web.models.user import User
 from web.schemas.chat import ApplyActionsRequest, ChatMessageResponse, ChatRequest, ChatResponse
 from web.services.chat import chat_with_user
+from web.services.keyword_sync import resync_system_tables
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 
@@ -128,5 +132,15 @@ async def apply_actions(
 
     msg.actions_applied = True
     await db.flush()
+
+    # Mirror admin keyword edits into system_* tables — same backstop pattern
+    # as ``web/routers/keywords.py::_maybe_sync_admin``. Failures are logged
+    # but never raised; ``fetch_runner._load_config`` calls
+    # ``resync_system_tables`` again as a backstop.
+    if current_user.is_admin:
+        try:
+            await resync_system_tables(db, current_user.id)
+        except Exception:  # noqa: BLE001 — non-fatal, fetch_runner is the backstop
+            logger.exception("admin chat-driven keyword sync failed (non-fatal)")
 
     return {"status": "ok", "applied_count": applied}

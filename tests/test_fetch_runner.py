@@ -51,7 +51,7 @@ async def test_run_fetch_writes_opps_scores_and_history(db_session, admin_user, 
 
     with patch(
         "web.services.fetch_runner._collect_opportunities",
-        new=AsyncMock(return_value=(fakes, [])),
+        new=AsyncMock(return_value=(fakes, [], {"nsf", "nih"})),
     ), patch(
         "web.services.fetch_runner._summarize_batch",
         new=AsyncMock(side_effect=lambda opps, model: opps),
@@ -85,7 +85,9 @@ async def test_run_fetch_isolates_per_source_errors(db_session, admin_user, monk
 
     with patch(
         "web.services.fetch_runner._collect_opportunities",
-        new=AsyncMock(return_value=([_fake_opp("nsf", "X1")], ["nih: timeout"])),
+        new=AsyncMock(
+            return_value=([_fake_opp("nsf", "X1")], ["nih: timeout"], {"nsf", "nih"})
+        ),
     ), patch(
         "web.services.fetch_runner._summarize_batch",
         new=AsyncMock(side_effect=lambda opps, model: opps),
@@ -114,7 +116,7 @@ async def test_run_fetch_dedup_skips_existing(db_session, admin_user, monkeypatc
 
     with patch(
         "web.services.fetch_runner._collect_opportunities",
-        new=AsyncMock(return_value=([_fake_opp("nsf", "X1")], [])),
+        new=AsyncMock(return_value=([_fake_opp("nsf", "X1")], [], {"nsf"})),
     ), patch(
         "web.services.fetch_runner._summarize_batch",
         new=AsyncMock(side_effect=lambda opps, model: opps),
