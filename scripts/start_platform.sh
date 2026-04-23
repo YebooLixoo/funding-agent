@@ -1,6 +1,6 @@
 #!/bin/bash
-# Start the public-facing platform (backend + frontend dev servers)
-# Prerequisites: PostgreSQL running on localhost:5432 with database funding_platform
+# Start the public-facing platform (backend + frontend dev servers).
+# Post-consolidation (D8): SQLite-only — no Postgres daemon required.
 
 set -e
 
@@ -10,13 +10,8 @@ PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 echo "=== Funding Agent Platform ==="
 echo ""
 
-# Check PostgreSQL
-if ! pg_isready -q 2>/dev/null; then
-    echo "PostgreSQL not running. Start it with:"
-    echo "  brew services start postgresql@16"
-    echo "  createdb funding_platform"
-    exit 1
-fi
+# Ensure data dir exists for SQLite (default DATABASE_URL writes to data/platform.db)
+mkdir -p "$PROJECT_DIR/data"
 
 echo "Starting backend (FastAPI)..."
 cd "$PROJECT_DIR"

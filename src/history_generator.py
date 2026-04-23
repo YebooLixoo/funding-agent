@@ -10,8 +10,6 @@ from pathlib import Path
 
 from jinja2 import Environment, FileSystemLoader
 
-from src.state import StateDB
-
 logger = logging.getLogger(__name__)
 
 
@@ -30,16 +28,19 @@ class HistoryGenerator:
             autoescape=True,
         )
 
-    def generate(self, db: StateDB) -> Path:
+    def generate(self, source) -> Path:
         """Generate history page from all emailed opportunities.
 
         Args:
-            db: StateDB instance to query emailed opportunities.
+            source: Any object implementing the ``HistoryDataSource`` protocol —
+                i.e. exposing ``get_emailed_opportunities() -> list[dict]``.
+                Concrete implementations include the legacy ``src.state.StateDB``
+                and ``web.services.history_data_source.PlatformDBSource``.
 
         Returns:
             Path to the generated index.html file.
         """
-        opps = db.get_emailed_opportunities()
+        opps = source.get_emailed_opportunities()
 
         # Compute deadline metadata for each opportunity
         now = datetime.now(timezone.utc)

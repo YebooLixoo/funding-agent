@@ -467,3 +467,41 @@ async def score_all_opportunities_for_user(db: AsyncSession, user_id) -> int:
 
     await db.flush()
     return count
+
+
+async def score_opportunities_for_user(
+    db: AsyncSession, user_id, opportunity_ids: list
+) -> int:
+    """Score a specific list of opportunities for one user.
+
+    Loads each Opportunity by id and delegates to ``score_opportunity_for_user``.
+    Per-opportunity failures are logged and skipped so the batch keeps going.
+
+    Returns the number of opportunities scored successfully.
+    """
+    if not opportunity_ids:
+        return 0
+
+    # Load user once to avoid re-querying in score_opportunity_for_user
+    user_result = await db.execute(select(User).where(User.id == user_id))
+    user = user_result.scalar_one_or_none()
+
+    n = 0
+    for oid in opportunity_ids:
+        try:
+            opp_result = await db.execute(
+                select(Opportunity).where(Opportunity.id == oid)
+            )
+            opp = opp_result.scalar_one_or_none()
+            if opp is None:
+                logger.warning(
+                    "score_opportunities_for_user: opportunity %s not found", oid
+                )
+                continue
+            await score_opportunity_for_user(db, user_id, opp, user=user)
+            n += 1
+        except Exception:
+            logger.exception(
+                "score_opportunities_for_user: failed user=%s opp=%s", user_id, oid
+            )
+    return n

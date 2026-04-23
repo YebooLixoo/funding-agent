@@ -34,8 +34,13 @@ def do_run_migrations(connection):
 
 
 async def run_async_migrations() -> None:
+    section = config.get_section(config.config_ini_section, {})
+    if config.cmd_opts and getattr(config.cmd_opts, "x", None):
+        overrides = dict(opt.split("=", 1) for opt in config.cmd_opts.x if "=" in opt)
+        if "url" in overrides:
+            section["sqlalchemy.url"] = overrides["url"]
     connectable = async_engine_from_config(
-        config.get_section(config.config_ini_section, {}),
+        section,
         prefix="sqlalchemy.",
         poolclass=pool.NullPool,
     )

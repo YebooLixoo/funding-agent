@@ -89,7 +89,7 @@ class TestEmailPreferences:
         data = res.json()
         assert data["is_subscribed"] is True
         assert data["frequency"] == "weekly"
-        assert data["day_of_week"] == 4  # Thursday
+        assert data["day_of_week"] == 3  # Thursday (Python weekday: 0=Mon..6=Sun)
         assert data["min_relevance_score"] == 0.3
 
     async def test_update_preferences(self, client: AsyncClient):

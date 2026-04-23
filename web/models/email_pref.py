@@ -23,7 +23,7 @@ class UserEmailPref(Base):
     )
     is_subscribed: Mapped[bool] = mapped_column(Boolean, default=True)
     frequency: Mapped[str] = mapped_column(String(16), default="weekly")  # daily, weekly, biweekly
-    day_of_week: Mapped[int] = mapped_column(Integer, default=4)  # 0=Mon, 4=Thu
+    day_of_week: Mapped[int] = mapped_column(Integer, default=3)  # 0=Mon..6=Sun (Python weekday()); 3=Thu
     time_of_day: Mapped[str] = mapped_column(String(8), default="20:00")
     min_relevance_score: Mapped[float] = mapped_column(Float, default=0.3)
     deadline_lookahead_days: Mapped[int] = mapped_column(Integer, default=30)

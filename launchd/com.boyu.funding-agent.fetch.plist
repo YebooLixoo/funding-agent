@@ -3,31 +3,32 @@
 <plist version="1.0">
 <dict>
     <key>Label</key>
-    <string>com.boyu.funding-agent.weekly</string>
+    <string>com.boyu.funding-agent.fetch</string>
     <key>ProgramArguments</key>
     <array>
         <string>/Users/boyu/.local/bin/uv</string>
         <string>run</string>
         <string>python</string>
         <string>-m</string>
-        <string>src.weekly_email</string>
+        <string>web.cli</string>
+        <string>fetch</string>
     </array>
     <key>WorkingDirectory</key>
     <string>/Users/boyu/funding-agent</string>
     <key>StartCalendarInterval</key>
     <dict>
-        <!-- Thursday = Weekday 4 -->
+        <!-- Thursday = Weekday 4 (launchd: 0=Sun..6=Sat) -->
         <key>Weekday</key>
         <integer>4</integer>
         <key>Hour</key>
-        <integer>20</integer>
+        <integer>12</integer>
         <key>Minute</key>
         <integer>0</integer>
     </dict>
     <key>StandardOutPath</key>
-    <string>/Users/boyu/funding-agent/outputs/logs/weekly_stdout.log</string>
+    <string>/Users/boyu/funding-agent/outputs/logs/cli-fetch.log</string>
     <key>StandardErrorPath</key>
-    <string>/Users/boyu/funding-agent/outputs/logs/weekly_stderr.log</string>
+    <string>/Users/boyu/funding-agent/outputs/logs/cli-fetch.err.log</string>
     <key>EnvironmentVariables</key>
     <dict>
         <key>PATH</key>
