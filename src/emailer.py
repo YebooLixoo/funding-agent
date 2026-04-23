@@ -50,6 +50,7 @@ class Emailer:
         coming_soon_opps: Optional[list[dict]] = None,
         university_opps: Optional[list[dict]] = None,
         compute_opps: Optional[list[dict]] = None,
+        unsubscribe_token: Optional[str] = None,
     ) -> str:
         """Compose HTML digest from template.
 
@@ -61,6 +62,9 @@ class Emailer:
             history_url: URL to the full opportunity history page.
             coming_soon_opps: Opportunities announced but not yet open.
             university_opps: University internal opportunities.
+            unsubscribe_token: Optional broadcast-recipient token. When set,
+                an unsubscribe link is rendered in the footer (digests sent to
+                the owner themselves should leave this as ``None``).
 
         Returns:
             Rendered HTML string.
@@ -117,6 +121,7 @@ class Emailer:
             upcoming_deadlines=upcoming_deadlines,
             deadline_count=len(upcoming_deadlines),
             history_url=history_url,
+            unsubscribe_token=unsubscribe_token,
         )
 
         return html

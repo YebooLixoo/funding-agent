@@ -33,6 +33,12 @@ async def db_session(monkeypatch) -> AsyncSession:
     except ImportError:
         # fetch_runner may not exist yet during earlier-task imports
         pass
+    try:
+        import web.services.email_dispatcher as _ed_mod
+        monkeypatch.setattr(_ed_mod, "async_session", Session, raising=False)
+    except ImportError:
+        # email_dispatcher may not exist yet during earlier-task imports
+        pass
 
     async with Session() as session:
         yield session
