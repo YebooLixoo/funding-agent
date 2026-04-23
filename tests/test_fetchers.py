@@ -16,7 +16,7 @@ from src.models import Opportunity
 
 class TestFetcherRegistry:
     def test_all_fetchers_registered(self):
-        expected = {"nsf", "grants_gov", "web_scraper"}
+        expected = {"nsf", "nih", "grants_gov", "web_scraper"}
         assert expected == set(FETCHER_REGISTRY.keys())
 
     def test_get_fetcher_valid(self):

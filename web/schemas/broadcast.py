@@ -1,16 +1,16 @@
 from __future__ import annotations
 
-from pydantic import BaseModel
+from pydantic import BaseModel, EmailStr
 
 
 class BroadcastRecipientCreate(BaseModel):
-    email: str
+    email: EmailStr
     name: str | None = None
 
 
 class BroadcastRecipientOut(BaseModel):
     id: str
-    email: str
+    email: EmailStr
     name: str | None
     is_active: bool
 

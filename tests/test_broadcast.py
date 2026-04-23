@@ -56,7 +56,7 @@ async def test_list_recipients(db_session, test_app, admin_user):
     db_session.add(
         BroadcastRecipient(
             owner_user_id=admin_user.id,
-            email="a@b",
+            email="a@b.com",
             name="A",
             is_active=True,
             unsubscribe_token=str(_uuid.uuid4()),
@@ -68,7 +68,7 @@ async def test_list_recipients(db_session, test_app, admin_user):
         r = await c.get("/api/v1/broadcast/recipients")
     assert r.status_code == 200, r.text
     assert len(r.json()) == 1
-    assert r.json()[0]["email"] == "a@b"
+    assert r.json()[0]["email"] == "a@b.com"
 
 
 @pytest.mark.asyncio
@@ -78,7 +78,7 @@ async def test_cap_at_25_active_recipients(db_session, test_app, admin_user):
         db_session.add(
             BroadcastRecipient(
                 owner_user_id=admin_user.id,
-                email=f"u{i}@y",
+                email=f"u{i}@y.com",
                 is_active=True,
                 unsubscribe_token=str(_uuid.uuid4()),
             )
@@ -87,7 +87,7 @@ async def test_cap_at_25_active_recipients(db_session, test_app, admin_user):
     transport = ASGITransport(app=test_app)
     async with AsyncClient(transport=transport, base_url="http://t") as c:
         r = await c.post(
-            "/api/v1/broadcast/recipients", json={"email": "extra@y"}
+            "/api/v1/broadcast/recipients", json={"email": "extra@y.com"}
         )
     assert r.status_code == 400, r.text
     assert "25" in r.text or "limit" in r.text.lower()
@@ -98,7 +98,7 @@ async def test_delete_recipient(db_session, test_app, admin_user):
     _set_current_user(test_app, admin_user)
     rec = BroadcastRecipient(
         owner_user_id=admin_user.id,
-        email="d@y",
+        email="d@y.com",
         is_active=True,
         unsubscribe_token=str(_uuid.uuid4()),
     )
@@ -118,7 +118,7 @@ async def test_delete_recipient(db_session, test_app, admin_user):
 async def test_unsubscribe_link_marks_inactive(db_session, test_app, admin_user):
     rec = BroadcastRecipient(
         owner_user_id=admin_user.id,
-        email="u@y",
+        email="u@y.com",
         is_active=True,
         unsubscribe_token=str(_uuid.uuid4()),
     )
@@ -145,7 +145,7 @@ async def test_user_cannot_delete_others_recipient(
     await db_session.flush()
     rec = BroadcastRecipient(
         owner_user_id=other.id,
-        email="d@y",
+        email="d@y.com",
         is_active=True,
         unsubscribe_token=str(_uuid.uuid4()),
     )
