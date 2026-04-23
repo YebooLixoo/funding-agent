@@ -16,11 +16,24 @@ TEST_DB_URL = "sqlite+aiosqlite:///:memory:"
 
 
 @pytest_asyncio.fixture
-async def db_session() -> AsyncSession:
+async def db_session(monkeypatch) -> AsyncSession:
     engine = create_async_engine(TEST_DB_URL, echo=False)
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     Session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+
+    # Make any service code that imports ``async_session`` share this engine.
+    # This lets tests that drive multi-session services (e.g., fetch_runner)
+    # verify state via the fixture's ``db_session`` handle.
+    import web.database as _db_mod
+    monkeypatch.setattr(_db_mod, "async_session", Session, raising=False)
+    try:
+        import web.services.fetch_runner as _fr_mod
+        monkeypatch.setattr(_fr_mod, "async_session", Session, raising=False)
+    except ImportError:
+        # fetch_runner may not exist yet during earlier-task imports
+        pass
+
     async with Session() as session:
         yield session
     await engine.dispose()

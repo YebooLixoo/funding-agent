@@ -39,6 +39,15 @@ class Settings(BaseSettings):
     gmail_address: str = ""
     gmail_app_password: str = ""
 
+    # Fetch runner / filtering (Task 11)
+    admin_email: str = ""
+    keyword_threshold: float = 0.3
+    llm_threshold: float = 0.5
+    borderline_min: float = 0.2
+    borderline_max: float = 0.6
+    llm_model: str = "gpt-5.2"
+    history_url: str = ""
+
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8", "extra": "ignore"}
 
 
