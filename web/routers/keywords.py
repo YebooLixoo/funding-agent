@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -17,10 +18,27 @@ from web.schemas.keyword import (
     KeywordsByCategory,
     KeywordUpdate,
 )
+from web.services.keyword_sync import resync_system_tables
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/keywords", tags=["keywords"])
 
 VALID_CATEGORIES = {"primary", "domain", "career", "faculty", "exclusion", "custom"}
+
+
+async def _maybe_sync_admin(db: AsyncSession, user: User) -> None:
+    """If ``user`` is admin, mirror their keywords into system_* tables.
+
+    Failures are logged but never raised — a sync issue must not break the
+    user's keyword edit. The fetch_runner backstop will catch up later.
+    """
+    if not user.is_admin:
+        return
+    try:
+        await resync_system_tables(db, user.id)
+    except Exception:  # noqa: BLE001 — non-fatal, fetch_runner is the backstop
+        logger.exception("admin keyword sync failed (non-fatal)")
 
 
 @router.get("", response_model=KeywordsByCategory)
@@ -72,6 +90,7 @@ async def add_keyword(
     )
     db.add(kw)
     await db.flush()
+    await _maybe_sync_admin(db, current_user)
     return kw
 
 
@@ -98,6 +117,7 @@ async def update_keyword(
     for field, value in update_data.items():
         setattr(kw, field, value)
     await db.flush()
+    await _maybe_sync_admin(db, current_user)
     return kw
 
 
@@ -117,6 +137,8 @@ async def delete_keyword(
     if not kw:
         raise HTTPException(status_code=404, detail="Keyword not found")
     await db.delete(kw)
+    await db.flush()
+    await _maybe_sync_admin(db, current_user)
 
 
 @router.post("/bulk", response_model=list[KeywordResponse], status_code=status.HTTP_201_CREATED)
@@ -150,4 +172,6 @@ async def bulk_add_keywords(
         db.add(kw)
         await db.flush()
         created.append(kw)
+    if created:
+        await _maybe_sync_admin(db, current_user)
     return created
