@@ -16,6 +16,7 @@ def group_by_source_type(rows) -> dict:
             "title": opp.title,
             "url": opp.url,
             "deadline": opp.deadline,
+            "posted_date": getattr(opp, "posted_date", None),
             "deadline_type": getattr(opp, "deadline_type", "fixed"),
             "opportunity_status": getattr(opp, "opportunity_status", "open"),
             "summary": opp.summary,
