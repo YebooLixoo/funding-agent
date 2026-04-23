@@ -138,3 +138,37 @@ async def test_undelivered_filter_empty_input(db_session):
     db_session.add(u)
     await db_session.flush()
     assert await get_undelivered_opportunity_ids(db_session, u.id, []) == []
+
+
+@pytest.mark.asyncio
+async def test_daily_users_not_due_within_24h_of_last_send(db_session):
+    u = User(email="d@x", password_hash="x", full_name="D", is_active=True)
+    db_session.add(u)
+    await db_session.flush()
+    last = datetime(2026, 4, 16, 20, 0, tzinfo=timezone.utc)
+    db_session.add(
+        UserEmailPref(
+            user_id=u.id,
+            is_subscribed=True,
+            frequency="daily",
+            day_of_week=3,
+            time_of_day="20:00",
+            last_sent_at=last,
+        )
+    )
+    await db_session.flush()
+    # 1 hour later: NOT due (within 24h window)
+    assert (
+        await get_users_due_for_email(db_session, now=last + timedelta(hours=1))
+    ) == []
+    # 23 hours later: still NOT due
+    assert (
+        await get_users_due_for_email(db_session, now=last + timedelta(hours=23))
+    ) == []
+    # 25 hours later: due (past 24h, slot was today's 20:00)
+    assert (
+        len(
+            await get_users_due_for_email(db_session, now=last + timedelta(hours=25))
+        )
+        == 1
+    )

@@ -75,16 +75,20 @@ async def dispatch_due_users(now: datetime | None = None) -> list[DispatchResult
         users = await get_users_due_for_email(s, now=now_dt)
 
     results: list[DispatchResult] = []
-    admin_processed = False
+    admin_success = False
     for user in users:
         async with async_session() as s:
             res = await _dispatch_one(s, user, settings, test_mode=False)
             await s.commit()
         results.append(res)
-        if user.email == settings.admin_email:
-            admin_processed = True
+        # Only re-render the static admin history if the admin's own send
+        # actually succeeded. A failed admin send must NOT cause us to publish
+        # a stale-page; the deliveries table is the source of truth for the
+        # "what got emailed" log.
+        if user.email == settings.admin_email and res.success:
+            admin_success = True
 
-    if admin_processed:
+    if admin_success:
         await _regenerate_admin_history(settings)
 
     return results
@@ -114,7 +118,7 @@ async def dispatch_one_user(
         else:
             await s.commit()
 
-    if not test_mode and user.email == settings.admin_email:
+    if not test_mode and user.email == settings.admin_email and res.success:
         await _regenerate_admin_history(settings)
     return [res]
 
@@ -192,6 +196,7 @@ async def _dispatch_one(s, user, settings, *, test_mode: bool) -> DispatchResult
         upcoming_deadlines=[],
         date_str=date_str,
         history_url=history_url,
+        app_base_url=settings.app_base_url or None,
     )
 
     n = len(rows_to_send)
@@ -200,11 +205,17 @@ async def _dispatch_one(s, user, settings, *, test_mode: bool) -> DispatchResult
         f"({n} opportunit{'y' if n == 1 else 'ies'})"
     )
 
-    success = True
-    recipients: list[tuple[str, str | None]] = [(user.email, None)] + [
-        (b.email, b.unsubscribe_token) for b in bcasts
+    # Track owner-send success separately from broadcast-send success. Only
+    # the OWNER's send may advance ``last_sent_at`` and write delivery rows;
+    # otherwise an SMTP failure permanently suppresses unsent opportunities.
+    owner_success: bool | None = None
+    broadcast_success_count = 0
+    broadcast_failure_count = 0
+
+    recipients: list[tuple[bool, str, str | None]] = [(True, user.email, None)] + [
+        (False, b.email, b.unsubscribe_token) for b in bcasts
     ]
-    for recipient_email, token in recipients:
+    for is_owner, recipient_email, token in recipients:
         try:
             html = emailer.compose(unsubscribe_token=token, **compose_kwargs)
         except TypeError:
@@ -215,9 +226,15 @@ async def _dispatch_one(s, user, settings, *, test_mode: bool) -> DispatchResult
             subject=subject,
             html_body=html,
         )
-        success = success and bool(ok)
+        if is_owner:
+            owner_success = bool(ok)
+        else:
+            if ok:
+                broadcast_success_count += 1
+            else:
+                broadcast_failure_count += 1
 
-    if not test_mode:
+    if not test_mode and owner_success:
         for opp_id in new_ids:
             s.add(
                 UserEmailDelivery(user_id=user.id, opportunity_id=opp_id)
@@ -228,12 +245,29 @@ async def _dispatch_one(s, user, settings, *, test_mode: bool) -> DispatchResult
                 sent_at=datetime.now(timezone.utc),
                 opportunity_count=len(new_ids),
                 opportunity_ids=[str(i) for i in new_ids],
-                success=success,
+                success=True,
             )
         )
         pref.last_sent_at = datetime.now(timezone.utc)
+    elif not test_mode and owner_success is False:
+        # Record the failure but do NOT mark deliveries or advance last_sent.
+        s.add(
+            UserEmailHistory(
+                user_id=user.id,
+                sent_at=datetime.now(timezone.utc),
+                opportunity_count=0,
+                opportunity_ids=[],
+                success=False,
+                error_msg=(
+                    f"owner send failed; broadcast: "
+                    f"{broadcast_success_count} ok, "
+                    f"{broadcast_failure_count} failed"
+                ),
+            )
+        )
 
-    return DispatchResult(user.id, len(new_ids), success)
+    sent_count = len(new_ids) if owner_success else 0
+    return DispatchResult(user.id, sent_count, bool(owner_success))
 
 
 async def _regenerate_admin_history(settings) -> None:

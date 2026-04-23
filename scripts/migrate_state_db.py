@@ -14,6 +14,7 @@ count — adequate for a one-shot migration.
 from __future__ import annotations
 
 import asyncio
+import json
 import sqlite3
 import sys
 from datetime import datetime
@@ -39,6 +40,28 @@ def _parse_dt(raw: str | None) -> datetime | None:
         return datetime.fromisoformat(raw)
     except ValueError:
         return None
+
+
+def _parse_dt_legacy(raw) -> datetime | None:
+    """Same as ``_parse_dt`` but tolerant of non-string inputs (None, bytes)."""
+    if not raw:
+        return None
+    try:
+        return datetime.fromisoformat(raw)
+    except (ValueError, TypeError):
+        return None
+
+
+def _parse_keywords_legacy(raw) -> list:
+    """Decode keywords stored as JSON string in legacy state.db."""
+    if isinstance(raw, str):
+        try:
+            return json.loads(raw) if raw else []
+        except (ValueError, TypeError):
+            return []
+    if isinstance(raw, (list, tuple)):
+        return list(raw)
+    return []
 
 
 async def migrate(state_db_path: Path, admin_email: str) -> dict:
@@ -80,6 +103,10 @@ async def migrate(state_db_path: Path, admin_email: str) -> dict:
             prefix = r["source"] + "_"
             source_id = composite[len(prefix):] if composite.startswith(prefix) else composite
 
+            deadline_dt = _parse_dt_legacy(r["deadline"])
+            posted_dt = _parse_dt_legacy(r["posted_date"])
+            kw_list = _parse_keywords_legacy(r["keywords"])
+
             dc = OppDC(
                 source=r["source"],
                 source_id=source_id,
@@ -98,10 +125,19 @@ async def migrate(state_db_path: Path, admin_email: str) -> dict:
                 eligibility=r["eligibility"],
                 access_url=r["access_url"],
                 funding_amount=r["funding_amount"],
+                deadline=deadline_dt,
+                posted_date=posted_dt,
+                keywords=kw_list,
             )
             row, was_new = await upsert_opportunity(s, dc)
             if was_new:
                 counts["opps"] += 1
+                # Preserve legacy ``fetched_at`` for the history page month
+                # grouping. ``upsert_opportunity`` defaults this to NOW();
+                # overwrite back to the legacy timestamp when known.
+                legacy_fetched = _parse_dt_legacy(r["fetched_at"])
+                if legacy_fetched is not None:
+                    row.fetched_at = legacy_fetched
 
             if r["status"] == "emailed":
                 exists = (

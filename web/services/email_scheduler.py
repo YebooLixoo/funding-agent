@@ -7,7 +7,7 @@ This module is designed to be called from a background scheduler (e.g., Celery b
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -57,8 +57,12 @@ async def get_users_due_for_email(
             last_sent = pref.last_sent_at
             if last_sent.tzinfo is None:
                 last_sent = last_sent.replace(tzinfo=timezone.utc)
-            elapsed_days = (now - last_sent).days
-            if elapsed_days < (gap - 1):
+            # Absolute next-send cutoff: after a send at ``last_sent`` with
+            # frequency ``gap`` days, the next send is allowed at
+            # ``last_sent + gap days`` (combined with the slot check below).
+            # This avoids the off-by-one ``elapsed_days < gap - 1`` bug that
+            # made daily users due every hour after their first send.
+            if now < last_sent + timedelta(days=gap):
                 continue
         if not _now_is_at_or_after_scheduled_slot(pref, now):
             continue

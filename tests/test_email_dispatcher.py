@@ -198,6 +198,54 @@ async def test_dispatch_skips_already_delivered_opps(db_session, admin_user):
 
 
 @pytest.mark.asyncio
+async def test_failed_send_does_not_mark_deliveries_or_advance_last_sent(
+    db_session, admin_user
+):
+    pref = UserEmailPref(
+        user_id=admin_user.id,
+        is_subscribed=True,
+        frequency="weekly",
+        day_of_week=3,
+        time_of_day="20:00",
+        min_relevance_score=0.3,
+        last_sent_at=None,
+    )
+    opp = Opportunity(
+        composite_id="nsf_FF",
+        source="nsf",
+        source_id="FF",
+        title="T",
+        description="d",
+        url="https://e.com/ff",
+        source_type="government",
+    )
+    db_session.add_all([pref, opp])
+    await db_session.flush()
+    db_session.add(
+        UserOpportunityScore(
+            user_id=admin_user.id, opportunity_id=opp.id, relevance_score=0.5
+        )
+    )
+    await db_session.commit()
+
+    with patch("src.emailer.Emailer.send", return_value=False):  # SMTP failure
+        result = await dispatch_one_user(admin_user.email, test_mode=False)
+
+    assert result[0].success is False
+    assert result[0].sent == 0
+    deliveries = (
+        await db_session.execute(select(UserEmailDelivery))
+    ).scalars().all()
+    assert deliveries == []  # NO delivery rows on failure
+    pref_after = (
+        await db_session.execute(
+            select(UserEmailPref).where(UserEmailPref.user_id == admin_user.id)
+        )
+    ).scalar_one()
+    assert pref_after.last_sent_at is None  # NOT advanced
+
+
+@pytest.mark.asyncio
 async def test_test_mode_does_not_write_deliveries(db_session, admin_user):
     pref = UserEmailPref(
         user_id=admin_user.id,

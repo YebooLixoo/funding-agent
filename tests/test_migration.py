@@ -64,12 +64,13 @@ def _build_legacy_state_db(path: Path):
         created_at TEXT NOT NULL
     );
     """)
-    # Two opps: one emailed, one pending
+    # Two opps: one emailed (with full legacy fields), one pending
     conn.execute("""
         INSERT INTO seen_opportunities VALUES
         ('nsf_X1','nsf','government','ML Research Grant','https://e.com/1',
-         'description','summary',NULL,NULL,NULL,NULL,0.7,'open','fixed',
-         NULL,NULL,NULL,NULL,NULL,NULL,'emailed','2026-01-01T00:00:00')
+         'description','summary','2026-06-30T00:00:00','2026-01-01T00:00:00',
+         '$500K','["machine learning", "ai"]',0.7,'open','fixed',
+         NULL,NULL,NULL,NULL,NULL,NULL,'emailed','2025-12-01T10:00:00')
     """)
     conn.execute("""
         INSERT INTO seen_opportunities VALUES
@@ -128,6 +129,16 @@ async def test_migration_copies_opps_emails_history_bootstrap(tmp_path, db_sessi
 
     sb = (await db_session.execute(select(SourceBootstrap))).scalars().all()
     assert len(sb) == 1 and sb[0].source_name == "nsf"
+
+    # Legacy fields survived: deadline / posted_date / funding_amount /
+    # keywords are populated, and fetched_at is the original timestamp,
+    # not "now". OppRow stores deadline/posted_date as String (ISO).
+    nsf_opp = next(o for o in opps if o.composite_id == "nsf_X1")
+    assert nsf_opp.deadline == "2026-06-30T00:00:00"
+    assert nsf_opp.posted_date == "2026-01-01T00:00:00"
+    assert nsf_opp.funding_amount == "$500K"
+    assert nsf_opp.keywords == ["machine learning", "ai"]
+    assert nsf_opp.fetched_at.isoformat().startswith("2025-12-01")
 
 
 @pytest.mark.asyncio
