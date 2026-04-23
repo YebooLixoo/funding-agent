@@ -27,18 +27,30 @@ Every researcher gets their own fully customized experience — their own keywor
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────┐
-│  Web Platform                                   │
-│                                                 │
-│  React + Tailwind ──── FastAPI (async)           │
-│       │                    │                    │
-│  User Dashboard        SQLAlchemy (PostgreSQL)  │
-│  Opportunity Browser   JWT Auth                 │
-│  Document Upload       Background Tasks         │
-│  AI Chat               LLM Integration          │
-│  Email/Source Config    Per-user Scheduling      │
-└─────────────────────────────────────────────────┘
+┌────────────────────────────────────────────────────────┐
+│  Single consolidated system                            │
+│                                                        │
+│  React + Tailwind ──── FastAPI (async, request-only)   │
+│       │                    │                           │
+│  User Dashboard        SQLAlchemy (SQLite, WAL)        │
+│  Opportunity Browser   JWT Auth                        │
+│  Document Upload       LLM Integration                 │
+│  AI Chat                                               │
+│                            │                           │
+│                            ▼                           │
+│         data/platform.db (single source of truth)      │
+│                            ▲                           │
+│                            │                           │
+│  web/cli.py ─────── launchd plists                     │
+│   - fetch (Thu 12:00)                                  │
+│   - email-digest --due (hourly)                        │
+│   - sqlite .backup (daily 02:00)                       │
+└────────────────────────────────────────────────────────┘
 ```
+
+FastAPI hosts no background work. Scheduled jobs run as `python -m web.cli ...`
+under launchd; both the API and the CLI share the same SQLite database
+managed by Alembic migrations.
 
 ### Tech Stack
 
@@ -46,11 +58,12 @@ Every researcher gets their own fully customized experience — their own keywor
 |-------|-----------|
 | Backend | FastAPI (Python, async) |
 | Frontend | React 19 + Vite + Tailwind CSS + TypeScript |
-| Database | PostgreSQL (SQLAlchemy + Alembic) — SQLite for dev |
+| Database | SQLite (WAL mode) via SQLAlchemy async + Alembic |
+| Scheduler | macOS launchd → `web/cli.py` (Click) |
 | Auth | JWT (python-jose + passlib) |
 | PDF Processing | PyMuPDF |
 | LLM | OpenAI API (keyword extraction, chat, scoring) |
-| Deployment | Docker Compose |
+| Deployment | Docker Compose (single backend + frontend, SQLite volume) |
 
 ## Quick Start
 
@@ -58,8 +71,7 @@ Every researcher gets their own fully customized experience — their own keywor
 
 - Python 3.10+
 - [uv](https://docs.astral.sh/uv/) package manager
-- Node.js 18+
-- PostgreSQL (or SQLite for development)
+- Node.js 18+ (only needed if you want to run the React frontend locally)
 
 ### 1. Clone and Install
 
@@ -67,10 +79,10 @@ Every researcher gets their own fully customized experience — their own keywor
 git clone https://github.com/boyuan12/funding-agent.git
 cd funding-agent
 
-# Backend dependencies
+# Backend dependencies (creates .venv + installs from uv.lock)
 uv sync
 
-# Frontend dependencies
+# Frontend dependencies (optional)
 cd frontend && npm install && cd ..
 ```
 
@@ -84,7 +96,7 @@ Required variables in `.env`:
 
 | Variable | Purpose |
 |----------|---------|
-| `DATABASE_URL` | PostgreSQL connection string (or `sqlite+aiosqlite:///data/platform.db` for dev) |
+| `DATABASE_URL` | Defaults to `sqlite+aiosqlite:///data/platform.db`; override only for non-local setups |
 | `OPENAI_API_KEY` | For keyword extraction, chat, and LLM filtering |
 | `JWT_SECRET_KEY` | Secret for signing auth tokens |
 | `GMAIL_ADDRESS` | For sending email digests |
@@ -93,52 +105,63 @@ Required variables in `.env`:
 ### 3. Run (Development)
 
 ```bash
+# Apply migrations (idempotent; auto-creates data/platform.db on first run)
+uv run alembic upgrade head
+
 # Start both backend and frontend
 ./scripts/start_platform.sh
-
-# Or run separately:
-# Backend
-DATABASE_URL="sqlite+aiosqlite:///data/platform.db" uv run uvicorn web.main:app --reload --port 8000
-
-# Frontend
-cd frontend && npx vite --port 5173
 ```
 
 Visit **http://localhost:5173** to register and start exploring.
 
-### 4. Run (Production with Docker)
+### 4. Scheduled jobs (optional, macOS)
+
+Background work (fetch, email digests, SQLite backup) is driven by the
+`web/cli.py` Click app — never by FastAPI itself. To register the launchd jobs
+shipped under `launchd/`, run `./scripts/install.sh`. Manual triggers:
+
+```bash
+./scripts/fetch_now.sh                         # web.cli fetch
+./scripts/email_now.sh                         # test mode (requires ADMIN_EMAIL)
+./scripts/email_now.sh --prod                  # email-digest --due (all due users)
+```
+
+### 5. Run (Production with Docker)
 
 ```bash
 docker compose up -d
 ```
 
-This starts PostgreSQL, the FastAPI backend, and an nginx-served React frontend.
+This starts the FastAPI backend (SQLite at `./data/platform.db`) and the
+nginx-served React frontend. No external database server is needed.
 
 ## Project Structure
 
 ```
 funding-agent/
-├── web/                        # FastAPI backend
-│   ├── main.py                 # App entry point
+├── web/                        # FastAPI backend + admin CLI
+│   ├── main.py                 # App entry point (request handling only)
+│   ├── cli.py                  # Click CLI: fetch, email-digest, regenerate-history
 │   ├── config.py               # Settings (env-based)
-│   ├── database.py             # SQLAlchemy async engine
+│   ├── database.py             # SQLAlchemy async engine (SQLite, WAL)
 │   ├── models/                 # ORM models (user, document, keyword, opportunity, etc.)
 │   ├── schemas/                # Pydantic request/response schemas
 │   ├── routers/                # API endpoints (auth, users, opportunities, keywords, etc.)
-│   └── services/               # Business logic (scoring, document processing, chat, email)
+│   └── services/               # Business logic (scoring, fetch_runner, email dispatch, chat)
 ├── frontend/                   # React + Vite + Tailwind
 │   └── src/
 │       ├── pages/              # Dashboard, Opportunities, Profile, Documents, Chat, etc.
 │       ├── components/         # Layout, shared UI
 │       ├── api/                # API client modules
 │       └── hooks/              # Auth context, custom hooks
-├── src/                        # Core pipeline (fetchers, filters, scoring algorithms)
+├── src/                        # Fetch / filter / summarize library (no DB coupling)
 │   ├── filter/                 # Keyword + LLM filtering engine
 │   ├── fetcher/                # Source-specific data fetchers
 │   └── models.py               # Opportunity data model
-├── tests/                      # Backend test suite (68 tests)
-├── alembic/                    # Database migrations
-├── docker-compose.yml          # Production deployment
+├── tests/                      # Backend test suite
+├── alembic/                    # Database migrations (authoritative schema)
+├── launchd/                    # macOS launchd plists (fetch / email / backup)
+├── docker-compose.yml          # Production deployment (SQLite volume)
 └── scripts/                    # Dev/ops scripts
 ```
 
