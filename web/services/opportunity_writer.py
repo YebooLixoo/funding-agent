@@ -38,18 +38,39 @@ async def upsert_opportunity(db: AsyncSession, opp: "OppDC") -> tuple[OppRow, bo
     """
     composite_id = f"{opp.source}_{opp.source_id}"
 
+    # Dedup lookups use ``.scalars().first()`` (not ``.scalar_one_or_none()``)
+    # deliberately. Dedup asks "is this opp already stored?", for which
+    # one-OR-MORE matches means "yes" — asserting *exactly* one made the whole
+    # fetch crash with ``MultipleResultsFound`` when two legitimately-distinct
+    # rows shared a value. ``url`` is a NON-unique column (e.g. two NVIDIA grant
+    # tracks share one landing-page URL), so >1 match is expected, not an error.
+    # ``order_by(id).limit(1)`` keeps the chosen survivor stable across runs and
+    # pushes the limit into SQL. ``composite_id`` has a UNIQUE index so it can
+    # match at most one row today, but uses the same tolerant pattern so a future
+    # duplicate degrades to a dedup instead of crashing the run.
+
     # 1. dedup by composite_id
     existing = (
-        await db.execute(select(OppRow).where(OppRow.composite_id == composite_id))
-    ).scalar_one_or_none()
+        await db.execute(
+            select(OppRow)
+            .where(OppRow.composite_id == composite_id)
+            .order_by(OppRow.id)
+            .limit(1)
+        )
+    ).scalars().first()
     if existing:
         return existing, False
 
-    # 2. dedup by URL
+    # 2. dedup by URL (non-unique column — may legitimately match multiple rows)
     if opp.url:
         existing = (
-            await db.execute(select(OppRow).where(OppRow.url == opp.url))
-        ).scalar_one_or_none()
+            await db.execute(
+                select(OppRow)
+                .where(OppRow.url == opp.url)
+                .order_by(OppRow.id)
+                .limit(1)
+            )
+        ).scalars().first()
         if existing:
             return existing, False
 
@@ -83,6 +104,7 @@ async def upsert_opportunity(db: AsyncSession, opp: "OppDC") -> tuple[OppRow, bo
         allocation_details=opp.allocation_details,
         eligibility=opp.eligibility,
         access_url=opp.access_url,
+        agency=getattr(opp, "agency", None),
     )
     db.add(row)
     await db.flush()
