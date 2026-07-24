@@ -2,19 +2,23 @@ university:
   sources:
     - name: utah_research
       label: "University of Utah Research Funding"
-      url: "https://research.utah.edu/funding/"
+      url: "https://www.research.utah.edu/funding/"
       institution: "University of Utah"
       relevance: very_high
 
+    # internal-grants.php / seed-grants.php were retired; the VPR now lists all
+    # internal + seed/pilot programs (FSGP, RIF, 1U4U Seed, DRA, UURF, FFA) on a
+    # single maintained page. Both entries point there; URL dedup collapses the
+    # overlap. Verified 200 with live FY26 deadlines (2026-07-23).
     - name: utah_internal_grants
       label: "University of Utah Internal Grants"
-      url: "https://research.utah.edu/funding/internal-grants.php"
+      url: "https://www.research.utah.edu/funding/internal-funding/"
       institution: "University of Utah"
       relevance: very_high
 
     - name: utah_ovpri
       label: "University of Utah OVPRI Seed Grants"
-      url: "https://research.utah.edu/funding/seed-grants.php"
+      url: "https://www.research.utah.edu/funding/internal-funding/"
       institution: "University of Utah"
       relevance: high
 
@@ -28,9 +32,9 @@ university:
   # Used by the web platform to dynamically fetch for any user's institution
   institution_urls:
     "University of Utah":
-      - url: "https://research.utah.edu/funding/"
+      - url: "https://www.research.utah.edu/funding/"
         label: "Research Funding"
-      - url: "https://research.utah.edu/funding/internal-grants.php"
+      - url: "https://www.research.utah.edu/funding/internal-funding/"
         label: "Internal Grants"
     "Stanford University":
       - url: "https://doresearch.stanford.edu/research-funding/find-funding"

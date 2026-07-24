@@ -176,17 +176,10 @@ compute:
       relevance: medium
       access_url: "https://www.nccs.nasa.gov/nccs-users/instructional/account-set-up"
 
-    - name: noaa_rdhpcs
-      label: "NOAA R&D HPC Systems"
-      url: "https://rdhpcs.noaa.gov/"
-      resource_type: hpc
-      resource_provider: "NOAA"
-      resource_scale: large
-      allocation_details: "HPC resources for weather, ocean, and environmental research."
-      eligibility: "NOAA-funded researchers and collaborators"
-      deadline_type: rolling
-      relevance: medium
-      access_url: "https://rdhpcs.noaa.gov/"
+# noaa_rdhpcs dropped 2026-07-23: rdhpcs.noaa.gov is unreachable to the scraper
+# (ECONNREFUSED / DNS fail — IP-restricted NOAA network) and the only reachable
+# mirror (docs.rdhpcs.noaa.gov) is internal-only, with no open-to-external
+# allocation call or dated opportunities to extract.
 
   industry:
     # --- GPU Hardware & Cloud Programs ---
@@ -324,28 +317,28 @@ compute:
       access_url: "https://www.intel.com/content/www/us/en/developer/tools/devcloud/overview.html"
 
     - name: cerebras_academic
-      label: "Cerebras Academic Access Program"
-      url: "https://www.cerebras.net/cerebras-academic-access/"
+      label: "Cerebras Inference Research Grant"
+      url: "https://www.cerebras.ai/blog/grantfrp"
       resource_type: gpu
       resource_provider: "Cerebras"
-      resource_scale: medium
-      allocation_details: "Access to Cerebras CS-2/CS-3 wafer-scale engines for AI research. Designed for large model training."
-      eligibility: "Faculty and researchers at accredited universities"
-      deadline_type: rolling
+      resource_scale: credits
+      allocation_details: "Up to $50,000 in Cerebras Inference API credits plus engineer sessions (shifted from CS-2/CS-3 hardware access). Cycle-based RFP."
+      eligibility: "Full-time faculty (PI) at accredited PhD-granting institutions"
+      deadline_type: periodic
       relevance: high
-      access_url: "https://www.cerebras.net/cerebras-academic-access/"
+      access_url: "https://www.cerebras.ai/blog/grantfrp"
 
     - name: lambda_academic
-      label: "Lambda Labs Academic Program"
-      url: "https://lambdalabs.com/service/gpu-cloud"
+      label: "Lambda Research Grant"
+      url: "https://lambda.ai/research"
       resource_type: gpu
       resource_provider: "Lambda Labs"
       resource_scale: credits
-      allocation_details: "50% academic discount on Lambda Cloud GPU instances (H100, A100). On-demand and reserved."
-      eligibility: "Researchers and students at accredited universities"
+      allocation_details: "Up to $5,000 in Lambda cloud credits (Lambda Research Grant), applied for on a rolling basis."
+      eligibility: "Researchers at accredited research institutions"
       deadline_type: rolling
       relevance: high
-      access_url: "https://lambdalabs.com/service/gpu-cloud"
+      access_url: "https://lambda.ai/research"
 
     - name: coreweave_academic
       label: "CoreWeave Academic Program"
@@ -360,16 +353,16 @@ compute:
       access_url: "https://www.coreweave.com/solutions/research"
 
     - name: nebius_academic
-      label: "Nebius Academic GPU Program"
-      url: "https://nebius.com/gpu"
+      label: "Nebius Research Credits Program"
+      url: "https://nebius.com/nebius-research-credits-program"
       resource_type: gpu
       resource_provider: "Nebius"
       resource_scale: credits
-      allocation_details: "Academic credits for H100 GPU cloud instances. Competitive pricing for research workloads."
-      eligibility: "Academic researchers worldwide"
-      deadline_type: rolling
-      relevance: medium
-      access_url: "https://nebius.com/gpu"
+      allocation_details: "Up to 8 GPUs for a full year plus up to 10M tokens (Token Factory). Monthly application windows; 2026-2027 academic year open."
+      eligibility: "Faculty at accredited academic institutions or non-profit research orgs"
+      deadline_type: periodic
+      relevance: high
+      access_url: "https://nebius.com/nebius-research-credits-program"
 
     - name: prime_intellect
       label: "Prime Intellect Compute Credits"
