@@ -41,6 +41,21 @@ def _fake_opp(source: str, source_id: str, source_type: str = "government") -> O
     )
 
 
+@pytest.fixture(autouse=True)
+def _isolate_curated(monkeypatch):
+    """Neutralize curated synthesis for the orchestration tests below.
+
+    ``run_fetch`` synthesizes ``university.curated`` entries from the real
+    conf/sources YAML on every run, which would inflate ``stored_count`` in the
+    tests that assert exact counts. These tests exercise fetch/dedup/error/
+    history behavior, not curation; ``test_run_fetch_synthesizes_curated_opps``
+    re-patches this to cover the curated path.
+    """
+    monkeypatch.setattr(
+        "web.services.fetch_runner._synthesize_curated_opps", lambda cfg: []
+    )
+
+
 @pytest.mark.asyncio
 async def test_run_fetch_writes_opps_scores_and_history(db_session, admin_user, monkeypatch):
     db_session.add(
@@ -133,3 +148,37 @@ async def test_run_fetch_dedup_skips_existing(db_session, admin_user, monkeypatc
         result = await run_fetch(now=datetime(2026, 4, 16, 12, 0, tzinfo=timezone.utc))
 
     assert result.stored_count == 0  # dedup matched
+
+
+@pytest.mark.asyncio
+async def test_run_fetch_synthesizes_curated_opps(db_session, admin_user, monkeypatch):
+    """Curated static entries are stored + scored even when the fetch/filter
+    pipeline returns nothing (they bypass fetch, filter, and summarizer)."""
+    db_session.add(UserKeyword(user_id=admin_user.id, keyword="ml", category="primary"))
+    await db_session.commit()
+    monkeypatch.setenv("ADMIN_EMAIL", admin_user.email)
+    from web.config import get_settings
+    get_settings().admin_email = admin_user.email
+
+    curated = _fake_opp("utah_internal", "fsgp", "university")
+    # Override the autouse isolation for this test only.
+    monkeypatch.setattr(
+        "web.services.fetch_runner._synthesize_curated_opps", lambda cfg: [curated]
+    )
+
+    with patch(
+        "web.services.fetch_runner._collect_opportunities",
+        new=AsyncMock(return_value=([], [], set())),
+    ), patch(
+        "web.services.fetch_runner._summarize_batch",
+        new=AsyncMock(side_effect=lambda opps, model: opps),
+    ), patch(
+        "web.services.fetch_runner._filter_opps",
+        new=AsyncMock(side_effect=lambda opps, **kw: opps),
+    ):
+        result = await run_fetch(now=datetime(2026, 4, 16, 12, 0, tzinfo=timezone.utc))
+
+    # Curated opp stored despite the pipeline returning zero fetched opps.
+    assert result.stored_count == 1
+    opps = (await db_session.execute(select(Opportunity))).scalars().all()
+    assert [o.composite_id for o in opps] == ["utah_internal_fsgp"]

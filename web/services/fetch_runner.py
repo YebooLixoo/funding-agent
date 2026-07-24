@@ -35,6 +35,7 @@ from src.fetcher.grants_gov import GrantsGovFetcher
 from src.fetcher.web_scraper import WebScraperFetcher
 from src.filter.keyword_filter import FilterConfig, KeywordFilter
 from src.filter.llm_filter import LLMFilter
+from src.models import Opportunity
 from src.summarizer import Summarizer
 from src.utils import last_thursday_noon_mt, now_mt
 from web.config import get_settings
@@ -60,8 +61,16 @@ class FetchResult:
 # --- Public entry point ----------------------------------------------------
 
 
-async def run_fetch(now: datetime | None = None) -> FetchResult:
-    """Run a single fetch end-to-end. See module docstring for phase layout."""
+async def run_fetch(
+    now: datetime | None = None, *, api_only: bool = False
+) -> FetchResult:
+    """Run a single fetch end-to-end. See module docstring for phase layout.
+
+    ``api_only=True`` skips all WebScraperFetcher sources (gov web_sources,
+    industry, university, compute) and runs only NSF / NIH / grants.gov API
+    fetchers. Useful when scraped sources are slow/blocked and you want
+    fresh API data fast (~30 sec instead of waiting for the slowest scraper).
+    """
     settings = get_settings()
     now_dt = now or now_mt()
 
@@ -73,11 +82,17 @@ async def run_fetch(now: datetime | None = None) -> FetchResult:
     window_end = now_dt
 
     raw_opps, errors, sources_with_results = await _collect_opportunities(
-        by_source, window_start, window_end, settings
+        by_source, window_start, window_end, settings, api_only=api_only
     )
     raw_opps = _batch_dedup(raw_opps)
     accepted = await _filter_opps(raw_opps, filter_kws=filter_kws, settings=settings)
     summarized = await _summarize_batch(accepted, settings.llm_model)
+
+    # Curated static entries (e.g. University of Utah internal grants, whose
+    # detail pages sit behind campus SSO and can't be scraped). Pre-vetted, so
+    # they bypass the keyword/LLM filter and the summarizer; upsert dedups them
+    # against the DB by composite_id, so they insert once and are skipped after.
+    summarized = summarized + _synthesize_curated_opps(_load_yaml_sources())
 
     # Phase 3 — write
     stored_ids = await _write_opps(summarized)
@@ -141,7 +156,9 @@ async def _load_config(settings):
 # --- Phase 2: remote fetch (NO session) ------------------------------------
 
 
-async def _collect_opportunities(by_source, window_start, window_end, settings):
+async def _collect_opportunities(
+    by_source, window_start, window_end, settings, *, api_only: bool = False
+):
     """Fan out per-source fetchers in parallel; isolate per-source errors.
 
     Returns ``(opportunities, error_messages)``. Ports the structure of
@@ -191,7 +208,7 @@ async def _collect_opportunities(by_source, window_start, window_end, settings):
 
     # Government web sources (DOE, USDOT, etc.)
     gov_scraper = None
-    for src in (gov_cfg.get("web_sources") or []):
+    for src in ([] if api_only else (gov_cfg.get("web_sources") or [])):
         if gov_scraper is None:
             gov_scraper = WebScraperFetcher(
                 model=settings.llm_model, source_type="government"
@@ -214,7 +231,7 @@ async def _collect_opportunities(by_source, window_start, window_end, settings):
 
     # Industry web sources
     ind_scraper = None
-    for src in (cfg.get("industry", {}).get("sources") or []):
+    for src in ([] if api_only else (cfg.get("industry", {}).get("sources") or [])):
         if ind_scraper is None:
             ind_scraper = WebScraperFetcher(model=settings.llm_model)
             scrapers.append(ind_scraper)
@@ -235,7 +252,7 @@ async def _collect_opportunities(by_source, window_start, window_end, settings):
 
     # University internal sources
     uni_scraper = None
-    for src in (cfg.get("university", {}).get("sources") or []):
+    for src in ([] if api_only else (cfg.get("university", {}).get("sources") or [])):
         if uni_scraper is None:
             uni_scraper = WebScraperFetcher(
                 model=settings.llm_model, source_type="university"
@@ -258,7 +275,7 @@ async def _collect_opportunities(by_source, window_start, window_end, settings):
 
     # Compute sources (curated metadata enriched after fetch)
     compute_scraper = None
-    for cat in ("government", "industry", "university"):
+    for cat in ([] if api_only else ("government", "industry", "university")):
         for src in (cfg.get("compute", {}).get(cat) or []):
             compute_sources.append(src)
             if compute_scraper is None:
@@ -370,6 +387,58 @@ def _enrich_compute(opp, compute_index: dict):
         eligibility=src.get("eligibility"),
         access_url=src.get("access_url"),
     )
+
+
+def _synthesize_curated_opps(cfg: dict) -> list:
+    """Build Opportunity objects directly from ``university.curated`` YAML.
+
+    For sources whose real detail pages are unreachable (University of Utah
+    internal grants sit behind campus SSO), the scraper only ever gets a login
+    page. These curated entries are pre-vetted awareness items: they carry a
+    full description + summary and are synthesized WITHOUT any network I/O, then
+    go straight to write + score (bypassing the keyword/LLM filter and the
+    summarizer, matching how curated compute sources are treated).
+
+    ``deadline`` is left ``None`` (rolling) so entries are never dropped as
+    expired between annual cycles; the last-known cycle date lives in the
+    description. ``upsert_opportunity`` dedups by ``composite_id``
+    (``{source}_{source_id}``), so each entry inserts once and is skipped on
+    later runs until its ``source_id`` is bumped for a new cycle.
+    """
+    out: list = []
+    for entry in (cfg.get("university", {}).get("curated") or []):
+        desc = entry.get("description", "")
+        sid = str(entry.get("source_id", entry["name"]))
+        base_url = entry["url"]
+        # Several curated programs can live on ONE landing page (all U of U
+        # internal grants list on .../internal-funding/). They are distinct
+        # opportunities, but ``upsert_opportunity`` dedups by URL and would
+        # collapse them to a single row. Append a per-program fragment so each
+        # gets a unique URL that still resolves to the correct page; keep the
+        # clean base page as the "apply here" access_url.
+        uniq_url = f"{base_url}#{sid}" if base_url else base_url
+        out.append(
+            Opportunity(
+                source=entry["name"],
+                source_id=sid,
+                title=entry["title"],
+                description=desc,
+                url=uniq_url,
+                source_type="university",
+                deadline=None,
+                funding_amount=entry.get("funding_amount"),
+                relevance_score=_RELEVANCE_SCORE.get(
+                    entry.get("relevance", "high"), 0.8
+                ),
+                summary=entry.get("summary") or desc,
+                deadline_type="rolling",
+                eligibility=entry.get("eligibility"),
+                access_url=base_url,
+            )
+        )
+    if out:
+        logger.info("Synthesized %d curated university opportunities", len(out))
+    return out
 
 
 def _batch_dedup(opps: list) -> list:

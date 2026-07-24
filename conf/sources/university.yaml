@@ -1,4 +1,100 @@
 university:
+  # Curated static entries — synthesized directly into opportunities WITHOUT a
+  # scrape (see fetch_runner._synthesize_curated_opps). Used for sources whose
+  # real detail pages sit behind campus SSO (research.utah.edu/secure/*), which
+  # the generic WebScraperFetcher cannot reach (it just gets the CAS login page).
+  # These are pre-vetted awareness items: they bypass the keyword/LLM filter and
+  # the summarizer, going straight to write + per-user scoring.
+  #
+  # deadline is intentionally left null (rolling awareness) because specific
+  # cycle dates change every year; the last-known cycle date is stated in the
+  # description. To re-surface a program for a NEW cycle (e.g. FY27), bump its
+  # source_id (e.g. fsgp -> fsgp_fy27) so it dedups as a fresh opportunity.
+  # Verified against https://www.research.utah.edu/funding/internal-funding/ on
+  # 2026-07-23.
+  curated:
+    - name: utah_internal
+      source_id: uurf
+      title: "U of U — UURF Interdisciplinary Research Initiative"
+      relevance: very_high
+      funding_amount: "Track 1: up to $50,000; Track 2: up to $250,000"
+      eligibility: "University of Utah faculty"
+      url: "https://www.research.utah.edu/funding/internal-funding/"
+      description: >-
+        University of Utah Research Foundation (UURF) Interdisciplinary Research
+        Initiative supports use-inspired research aligned with VPR strategic
+        priorities, with a focus on developing external funding proposals.
+        Track 1 up to $50,000 and Track 2 up to $250,000. Most recent cycle
+        deadlines: Track 1 Oct 23 2025, Track 2 Mar 19 2026 — check the internal
+        funding page for the current cycle.
+
+    - name: utah_internal
+      source_id: fsgp
+      title: "U of U — Faculty Small Grant Program (FSGP)"
+      relevance: very_high
+      funding_amount: "Up to $10,000"
+      eligibility: "University of Utah faculty"
+      url: "https://www.research.utah.edu/funding/internal-funding/"
+      description: >-
+        Faculty Small Grant Program (FSGP) provides up to $10,000 over one year
+        to support scholarly publications and creative research. Most recent
+        cycle deadline: Dec 4 2025 — check the internal funding page for the
+        current cycle.
+
+    - name: utah_internal
+      source_id: ffa
+      title: "U of U — Faculty Fellow Awards (FFA)"
+      relevance: high
+      funding_amount: "One semester full release at full salary (+$15,000 to department)"
+      eligibility: "University of Utah faculty"
+      url: "https://www.research.utah.edu/funding/internal-funding/"
+      description: >-
+        Faculty Fellow Awards (FFA) provide a semester of full release time at
+        full salary for scholarly or creative research, plus $15,000 to the
+        awardee's department to offset the cost of release. Most recent cycle:
+        Step One Oct 2 2025, Step Two Oct 30 2025 — check the internal funding
+        page for the current cycle.
+
+    - name: utah_internal
+      source_id: dra
+      title: "U of U — Distinguished Research Awards (DRA)"
+      relevance: high
+      funding_amount: "Up to $10,000"
+      eligibility: "University of Utah faculty"
+      url: "https://www.research.utah.edu/funding/internal-funding/"
+      description: >-
+        Distinguished Research Awards (DRA) are prestigious awards recognizing
+        outstanding research achievements (three awarded annually), up to
+        $10,000. Most recent cycle deadline: Dec 11 2025 — check the internal
+        funding page for the current cycle.
+
+    - name: utah_internal
+      source_id: rif
+      title: "U of U — Research Instrumentation Fund (RIF)"
+      relevance: very_high
+      funding_amount: "Up to $250,000"
+      eligibility: "University of Utah faculty and core facilities"
+      url: "https://www.research.utah.edu/funding/internal-funding/"
+      description: >-
+        Research Instrumentation Fund (RIF) supports purchases and upgrades of
+        research instrumentation intended for shared use, up to $250,000. Most
+        recent cycle deadline: Jan 8 2026 — check the internal funding page for
+        the current cycle.
+
+    - name: utah_internal
+      source_id: 1u4u
+      title: "U of U — 1U4U Collaborative Seed Grant Program"
+      relevance: very_high
+      funding_amount: "Up to $50,000"
+      eligibility: "Cross-campus / cross-disciplinary University of Utah teams"
+      url: "https://www.research.utah.edu/funding/internal-funding/"
+      description: >-
+        1U4U Collaborative Seed Grant Program funds cross-campus, cross-
+        disciplinary teams addressing community challenges, up to $50,000 (the
+        2025-2026 theme was mental and behavioral health). Most recent cycle
+        deadline: Feb 26 2026 — check the internal funding page for the current
+        cycle.
+
   sources:
     - name: utah_research
       label: "University of Utah Research Funding"

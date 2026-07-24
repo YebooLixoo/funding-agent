@@ -15,6 +15,7 @@ import logging
 import re
 from collections import Counter
 from datetime import datetime, timezone
+from functools import lru_cache
 from typing import Optional
 
 from sqlalchemy import select
@@ -35,6 +36,50 @@ W_KEYWORD = 0.40
 W_PROFILE = 0.30
 W_BEHAVIOR = 0.20
 W_URGENCY = 0.10
+
+# Curated sources (compute allocations + university internal-grant awareness
+# entries) bypass the keyword FILTER because they are pre-vetted; they must also
+# bypass the per-user score THRESHOLD, or the keyword-based scorer buries them:
+# institutional grants rarely match a user's topical keywords and often have no
+# deadline, so they score ~0.2 and never reach the digest's 0.3 gate. A floor
+# guarantees a pre-vetted opportunity clears the threshold.
+#
+# NOTE (multi-user): institution-specific curated sources (a university's
+# internal grants) are only relevant to that institution's users. With a single
+# admin user today this blanket floor is correct; a multi-user deployment should
+# gate the university-curated floor on institution match.
+_CURATED_SCORE_FLOOR = 0.6
+
+
+@lru_cache(maxsize=1)
+def _curated_university_sources() -> frozenset:
+    """Source names under ``university.curated`` in the source YAML."""
+    try:
+        import yaml
+
+        with open("conf/sources/university.yaml", encoding="utf-8") as f:
+            data = yaml.safe_load(f) or {}
+        return frozenset(
+            e["name"]
+            for e in (data.get("university", {}).get("curated") or [])
+            if e.get("name")
+        )
+    except Exception:  # noqa: BLE001 — scoring must not fail on a config read
+        return frozenset()
+
+
+def _curated_floor(opp, final_score: float) -> float:
+    """Raise a pre-vetted curated opportunity's score to ``_CURATED_SCORE_FLOOR``.
+
+    Curated = compute allocations (``source_type == 'compute'``) or university
+    internal-grant awareness entries. ``max`` so a curated opp that also matches
+    keywords keeps its higher computed score.
+    """
+    is_curated = (
+        getattr(opp, "source_type", None) == "compute"
+        or getattr(opp, "source", None) in _curated_university_sources()
+    )
+    return max(final_score, _CURATED_SCORE_FLOOR) if is_curated else final_score
 
 
 # ---------------------------------------------------------------------------
@@ -371,6 +416,7 @@ async def score_opportunity_for_user(
         + W_URGENCY * urgency_score
     )
     final_score = min(final_score, 1.0)
+    final_score = _curated_floor(opportunity, final_score)
 
     # Upsert the score
     result = await db.execute(
@@ -437,6 +483,7 @@ async def score_all_opportunities_for_user(db: AsyncSession, user_id) -> int:
             + W_URGENCY * urgency_score,
             1.0,
         )
+        final_score = _curated_floor(opp, final_score)
 
         score_result = await db.execute(
             select(UserOpportunityScore).where(
