@@ -182,3 +182,85 @@ async def test_run_fetch_synthesizes_curated_opps(db_session, admin_user, monkey
     assert result.stored_count == 1
     opps = (await db_session.execute(select(Opportunity))).scalars().all()
     assert [o.composite_id for o in opps] == ["utah_internal_fsgp"]
+
+
+# --- in-batch dedup ---------------------------------------------------------
+# Regression for 2026-10-29: _batch_dedup used a bare >=0.80 title rule and ran
+# BEFORE the keyword filter, so an irrelevant near-twin that happened to come
+# first shadowed a relevant sibling and both were lost.
+
+
+def _titled(source: str, source_id: str, title: str, score: float = 0.7) -> OppDC:
+    return OppDC(
+        source=source,
+        source_id=source_id,
+        title=title,
+        description="d",
+        url=f"https://e.com/{source}/{source_id}",
+        relevance_score=score,
+    )
+
+
+def test_batch_dedup_keeps_same_source_siblings():
+    from web.services.fetch_runner import _batch_dedup
+
+    ctp = "Fiscal Year 2026 Cooperating Technical Partners (CTP) Program - Region"
+    lsr = "Landscape Scale Restoration Grant Program for"
+    opps = [
+        _titled("grants_gov", "1", f"{ctp} 9"),
+        _titled("grants_gov", "2", f"{ctp} 8"),
+        _titled("grants_gov", "3", f"{lsr} Tribes"),
+        _titled("grants_gov", "4", f"{lsr} Non-Federal Lands"),
+    ]
+    assert [o.source_id for o in _batch_dedup(opps)] == ["1", "2", "3", "4"]
+
+
+def test_drop_repeated_ids_keeps_first_copy():
+    """The main pass and the approaching-deadline pass can return the same record;
+    it must be collapsed BEFORE the filter so the LLM doesn't score it twice."""
+    from web.services.fetch_runner import _drop_repeated_ids
+
+    first, second = _titled("grants_gov", "1", "Plasma Physics"), _titled("grants_gov", "1", "x")
+    opps = [first, _titled("grants_gov", "2", "Other"), second]
+    assert _drop_repeated_ids(opps) == [first, opps[1]]
+
+
+def test_batch_dedup_keeps_highest_scoring_cross_source_twin():
+    from web.services.fetch_runner import _batch_dedup
+
+    opps = [
+        _titled("nsf", "rss_1", "Plasma Physics", score=0.4),
+        _titled("grants_gov", "gg_1", "Plasma Physics", score=0.8),
+    ]
+    kept = _batch_dedup(opps)
+    assert [(o.source, o.relevance_score) for o in kept] == [("grants_gov", 0.8)]
+
+
+@pytest.mark.asyncio
+async def test_run_fetch_filters_before_batch_dedup(db_session, admin_user, monkeypatch):
+    db_session.add(UserKeyword(user_id=admin_user.id, keyword="ml", category="primary"))
+    await db_session.commit()
+    monkeypatch.setenv("ADMIN_EMAIL", admin_user.email)
+    from web.config import get_settings
+    get_settings().admin_email = admin_user.email
+
+    # Cross-source twins: the first one is irrelevant, the second relevant.
+    raw = [
+        _titled("nsf", "rss_1", "Plasma Physics"),
+        _titled("grants_gov", "gg_1", "Plasma Physics"),
+    ]
+    with patch(
+        "web.services.fetch_runner._collect_opportunities",
+        new=AsyncMock(return_value=(raw, [], {"nsf", "grants_gov"})),
+    ), patch(
+        "web.services.fetch_runner._summarize_batch",
+        new=AsyncMock(side_effect=lambda opps, model: opps),
+    ), patch(
+        "web.services.fetch_runner._filter_opps",
+        new=AsyncMock(side_effect=lambda opps, **kw: [o for o in opps if o.source == "grants_gov"]),
+    ):
+        result = await run_fetch(now=datetime(2026, 4, 16, 12, 0, tzinfo=timezone.utc))
+
+    assert result.stored_count == 1
+    rows = (await db_session.execute(select(Opportunity))).scalars().all()
+    assert [r.source for r in rows] == ["grants_gov"]

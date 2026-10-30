@@ -21,10 +21,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import re
 from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
-from difflib import SequenceMatcher
 from pathlib import Path
 
 from omegaconf import OmegaConf
@@ -46,7 +44,7 @@ from web.models.system_keywords import SystemFilterKeyword, SystemSearchTerm
 from web.models.user import User
 from web.services.auto_scorer import score_new_opportunities
 from web.services.keyword_sync import resync_system_tables
-from web.services.opportunity_writer import upsert_opportunity
+from web.services.opportunity_writer import titles_match, upsert_opportunity
 
 logger = logging.getLogger(__name__)
 
@@ -84,9 +82,11 @@ async def run_fetch(
     raw_opps, errors, sources_with_results = await _collect_opportunities(
         by_source, window_start, window_end, settings, api_only=api_only
     )
-    raw_opps = _batch_dedup(raw_opps)
+    raw_opps = _drop_repeated_ids(raw_opps)
     accepted = await _filter_opps(raw_opps, filter_kws=filter_kws, settings=settings)
-    summarized = await _summarize_batch(accepted, settings.llm_model)
+    # Title dedup AFTER filtering, so an irrelevant near-twin can't shadow a relevant one.
+    unique = _batch_dedup(accepted)
+    summarized = await _summarize_batch(unique, settings.llm_model)
 
     # Curated static entries (e.g. University of Utah internal grants, whose
     # detail pages sit behind campus SSO and can't be scraped). Pre-vetted, so
@@ -96,6 +96,10 @@ async def run_fetch(
 
     # Phase 3 — write
     stored_ids = await _write_opps(summarized)
+    logger.info(
+        "Fetch funnel: fetched=%d accepted=%d unique=%d stored=%d (incl. curated)",
+        len(raw_opps), len(accepted), len(unique), len(stored_ids),
+    )
 
     # Phase 4 — auto-score, bootstrap-mark, history
     fh_id = await _record_run(
@@ -441,20 +445,32 @@ def _synthesize_curated_opps(cfg: dict) -> list:
     return out
 
 
-def _batch_dedup(opps: list) -> list:
-    """Cross-source title-similarity dedup within a single batch.
+def _drop_repeated_ids(opps: list) -> list:
+    """Keep the first copy of each ``(source, source_id)``.
 
-    Ports ``src/weekly_fetch.py:361-376``. Threshold 0.80 matches
-    ``opportunity_writer._TITLE_THRESHOLD``.
+    The grants.gov main and approaching-deadline passes can return the same
+    record; collapsing it before filtering avoids scoring it twice with the LLM.
     """
-    seen: list[str] = []
+    seen: set[tuple[str, str]] = set()
     out: list = []
     for opp in opps:
-        norm = re.sub(r"\s+", " ", re.sub(r"[^\w\s]", "", opp.title.lower().strip()))
-        if any(SequenceMatcher(None, norm, s).ratio() >= 0.80 for s in seen):
-            continue
-        seen.append(norm)
-        out.append(opp)
+        key = (opp.source, opp.source_id)
+        if key not in seen:
+            seen.add(key)
+            out.append(opp)
+    return out
+
+
+def _batch_dedup(opps: list) -> list:
+    """Drop in-batch title duplicates, keeping the highest-scoring copy.
+
+    Runs on filtered opportunities and uses the same ``titles_match`` rule as
+    the DB-side dedup in ``upsert_opportunity``.
+    """
+    out: list = []
+    for opp in sorted(opps, key=lambda o: o.relevance_score, reverse=True):
+        if not any(titles_match(opp, kept) for kept in out):
+            out.append(opp)
     return out
 
 

@@ -2,9 +2,20 @@
 
 from __future__ import annotations
 
+import hashlib
 from dataclasses import dataclass, field
 from datetime import datetime, date
 from typing import Optional
+
+
+
+def title_derived_source_id(source: str, title: str) -> str:
+    """Source id for scraped items that have no upstream id: a hash of the title.
+
+    Such ids carry no identity beyond the (LLM-extracted) title itself, which
+    ``opportunity_writer.titles_match`` relies on to recognise them.
+    """
+    return f"{source}_{hashlib.md5(title.encode()).hexdigest()[:8]}"
 
 
 # Standard quarter end dates (month, day)

@@ -1,8 +1,8 @@
 """Async upsert helper for ``Opportunity`` rows.
 
 Ports the dedup logic from ``src/state.py:StateDB.store_opportunity`` to a
-SQLAlchemy async helper. Three dedup paths (composite_id, URL,
-title-similarity >= 0.80) precede the actual insert.
+SQLAlchemy async helper. Three dedup paths (composite_id, URL, title match —
+see ``titles_match``) precede the actual insert.
 """
 
 from __future__ import annotations
@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.models import title_derived_source_id
 from web.models.opportunity import Opportunity as OppRow
 
 if TYPE_CHECKING:
@@ -21,11 +22,55 @@ if TYPE_CHECKING:
 
 
 _TITLE_THRESHOLD = 0.80
+_DIGITS = re.compile(r"\d+")
 
 
 def _normalize(title: str) -> str:
     """Lowercase, strip punctuation, collapse whitespace."""
     return re.sub(r"\s+", " ", re.sub(r"[^\w\s]", "", title.lower().strip()))
+
+
+def _day(deadline) -> str | None:
+    """``YYYY-MM-DD`` of a deadline given as a datetime/date or ISO string."""
+    return str(deadline)[:10] if deadline else None
+
+
+def _numbers(title: str) -> set[int]:
+    """Integers in the raw title (before punctuation stripping glues '2024-2026')."""
+    return {int(n) for n in _DIGITS.findall(title)}
+
+
+def _has_upstream_id(rec) -> bool:
+    """False for scraped items whose id is just a hash of their own title."""
+    return rec.source_id != title_derived_source_id(rec.source, rec.title or "")
+
+
+def titles_match(a, b) -> bool:
+    """Do ``a`` and ``b`` look like the same opportunity, judging by title?
+
+    Takes anything with ``source``/``source_id``/``title``/``deadline``
+    (dataclass or DB row). Templated titles ("Fiscal Year 2026 ... - Region 9",
+    "... Cooperative Ecosystem Studies Unit") are highly similar across distinct
+    opportunities, so similarity is overruled by anything that tells two
+    records apart:
+
+    - both deadlines known and different -> a new cycle, not a duplicate;
+    - same source with upstream ids (grants.gov, curated YAML) -> the ids are
+      authoritative (distinct ids reach here), so only an exact re-post
+      (identical title AND known deadline) is a duplicate;
+    - otherwise (across sources, or scraper ids that merely hash the title) ->
+      numbers in the titles (fiscal year, region, cycle) must agree, then
+      SequenceMatcher >= ``_TITLE_THRESHOLD``.
+    """
+    day_a, day_b = _day(a.deadline), _day(b.deadline)
+    if day_a and day_b and day_a != day_b:
+        return False
+    norm_a, norm_b = _normalize(a.title or ""), _normalize(b.title or "")
+    if a.source == b.source and _has_upstream_id(a) and _has_upstream_id(b):
+        return norm_a == norm_b and day_a is not None and day_a == day_b
+    if _numbers(a.title or "") != _numbers(b.title or ""):
+        return False
+    return SequenceMatcher(None, norm_a, norm_b).ratio() >= _TITLE_THRESHOLD
 
 
 async def upsert_opportunity(db: AsyncSession, opp: "OppDC") -> tuple[OppRow, bool]:
@@ -34,7 +79,7 @@ async def upsert_opportunity(db: AsyncSession, opp: "OppDC") -> tuple[OppRow, bo
     Dedup order matches ``StateDB.store_opportunity``:
       1. composite_id ("{source}_{source_id}")
       2. exact URL match
-      3. title similarity >= 0.80 (SequenceMatcher on normalized titles)
+      3. title match against any stored row (``titles_match``)
     """
     composite_id = f"{opp.source}_{opp.source_id}"
 
@@ -74,12 +119,15 @@ async def upsert_opportunity(db: AsyncSession, opp: "OppDC") -> tuple[OppRow, bo
         if existing:
             return existing, False
 
-    # 3. dedup by title-similarity
-    norm = _normalize(opp.title)
-    candidates = (await db.execute(select(OppRow.id, OppRow.title))).all()
-    for row_id, row_title in candidates:
-        if SequenceMatcher(None, norm, _normalize(row_title or "")).ratio() >= _TITLE_THRESHOLD:
-            existing = await db.get(OppRow, row_id)
+    # 3. dedup by title match
+    candidates = (
+        await db.execute(
+            select(OppRow.id, OppRow.source, OppRow.source_id, OppRow.title, OppRow.deadline)
+        )
+    ).all()
+    for cand in candidates:
+        if titles_match(opp, cand):
+            existing = await db.get(OppRow, cand.id)
             return existing, False
 
     # 4. insert

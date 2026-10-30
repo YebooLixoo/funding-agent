@@ -12,6 +12,7 @@ the holder's PID; if the holder is no longer alive the lock is reclaimed.
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 import sys
 from pathlib import Path
@@ -31,6 +32,7 @@ def cli() -> None:
 @cli.command()
 def fetch() -> None:
     """Run the fetch pipeline once. Acquires data/.fetch.lock; refuses if held."""
+    _configure_logging()
     if not _acquire_lock():
         click.echo("Another fetch is already running. Exiting.", err=True)
         sys.exit(1)
@@ -111,6 +113,20 @@ def migrate_state_db() -> None:
     from scripts.migrate_state_db import main as run_migration
 
     run_migration()
+
+
+
+def _configure_logging() -> None:
+    """Send INFO logs, timestamped, to stderr (launchd: cli-fetch.err.log).
+
+    Without this only Python's last-resort WARNING handler ran, so the
+    pipeline's per-run funnel counts were never written anywhere.
+    """
+    logging.basicConfig(
+        level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s"
+    )
+    for noisy in ("httpx", "httpcore", "openai"):
+        logging.getLogger(noisy).setLevel(logging.WARNING)
 
 
 def _acquire_lock() -> bool:

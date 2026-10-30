@@ -6,13 +6,12 @@ Identifies only real, active, currently-open funding opportunities.
 
 from __future__ import annotations
 
-import hashlib
 import json
 import logging
 from datetime import datetime, timezone
 from typing import Optional
 
-from src.models import Opportunity, next_quarter_deadline
+from src.models import Opportunity, next_quarter_deadline, title_derived_source_id
 from src.utils import parse_date
 
 logger = logging.getLogger(__name__)
@@ -423,7 +422,6 @@ class OpportunityValidator:
             # coming_soon: no deadline required, skip deadline checks
 
             title = item.get("title", "")
-            item_hash = hashlib.md5(title.encode()).hexdigest()[:8]
 
             # Map LLM deadline_status to persistent deadline_type
             deadline_type_map = {
@@ -444,7 +442,7 @@ class OpportunityValidator:
 
             opp = Opportunity(
                 source=source_name,
-                source_id=f"{source_name}_{item_hash}",
+                source_id=title_derived_source_id(source_name, title),
                 title=title,
                 description=item.get("description", ""),
                 url=url,
