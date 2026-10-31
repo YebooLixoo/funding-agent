@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import os
+from dataclasses import replace
 from typing import Optional
 
 from src.models import Opportunity
@@ -87,28 +88,7 @@ class Summarizer:
         results = []
         for opp in opportunities:
             summary = await self.summarize(opp)
-            new_opp = Opportunity(
-                source=opp.source,
-                source_id=opp.source_id,
-                title=opp.title,
-                description=opp.description,
-                url=opp.url,
-                source_type=opp.source_type,
-                deadline=opp.deadline,
-                posted_date=opp.posted_date,
-                funding_amount=opp.funding_amount,
-                keywords=opp.keywords,
-                relevance_score=opp.relevance_score,
-                summary=summary,
-                opportunity_status=opp.opportunity_status,
-                deadline_type=opp.deadline_type,
-                resource_type=opp.resource_type,
-                resource_provider=opp.resource_provider,
-                resource_scale=opp.resource_scale,
-                allocation_details=opp.allocation_details,
-                eligibility=opp.eligibility,
-                access_url=opp.access_url,
-            )
+            new_opp = replace(opp, summary=summary)
             results.append(new_opp)
 
         logger.info(f"Summarized {len(results)} opportunities")

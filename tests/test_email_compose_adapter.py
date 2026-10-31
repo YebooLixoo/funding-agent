@@ -9,7 +9,7 @@ class FakeOpp:
         for attr in ("url", "deadline", "deadline_type", "opportunity_status",
                      "summary", "funding_amount", "source",
                      "resource_type", "resource_provider", "resource_scale",
-                     "allocation_details", "eligibility", "access_url"):
+                     "allocation_details", "eligibility", "access_url", "agency"):
             setattr(self, attr, kwargs.get(attr))
 
 
@@ -53,3 +53,8 @@ def test_dict_includes_all_emailer_fields():
                      "funding_amount", "source", "source_type", "deadline_type",
                      "opportunity_status", "relevance_score"):
         assert required in d, f"missing {required}"
+
+
+def test_dict_carries_agency():
+    out = group_by_source_type([(FakeOpp("government", agency="DOT-FHWA"), FakeScore())])
+    assert out["government_opps"][0]["agency"] == "DOT-FHWA"

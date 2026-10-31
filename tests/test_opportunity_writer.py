@@ -257,3 +257,11 @@ async def test_cross_source_number_check_ignores_dash_style(db_session):
         _opp("noaa", "B", "FY 2024-2026 Broad Agency Announcement (BAA), OAR", _DL_2026),
     )
     assert was_new is False
+
+
+@pytest.mark.asyncio
+async def test_stores_agency(db_session):
+    opp = OppDC(source="grants_gov", source_id="A1", title="T", description="d",
+                url="https://e.com/a1", agency="DOT-FHWA")
+    row, _ = await upsert_opportunity(db_session, opp)
+    assert row.agency == "DOT-FHWA"

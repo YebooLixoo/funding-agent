@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Optional
 
 from src.models import Opportunity
@@ -155,28 +155,7 @@ class KeywordFilter:
 
         for opp in opportunities:
             s = self.score(opp)
-            scored_opp = Opportunity(
-                source=opp.source,
-                source_id=opp.source_id,
-                title=opp.title,
-                description=opp.description,
-                url=opp.url,
-                source_type=opp.source_type,
-                deadline=opp.deadline,
-                posted_date=opp.posted_date,
-                funding_amount=opp.funding_amount,
-                keywords=opp.keywords,
-                relevance_score=s,
-                summary=opp.summary,
-                opportunity_status=opp.opportunity_status,
-                deadline_type=opp.deadline_type,
-                resource_type=opp.resource_type,
-                resource_provider=opp.resource_provider,
-                resource_scale=opp.resource_scale,
-                allocation_details=opp.allocation_details,
-                eligibility=opp.eligibility,
-                access_url=opp.access_url,
-            )
+            scored_opp = replace(opp, relevance_score=s)
 
             if s >= 0.6:
                 accepted.append(scored_opp)

@@ -8,7 +8,6 @@ from datetime import datetime, date
 from typing import Optional
 
 
-
 def title_derived_source_id(source: str, title: str) -> str:
     """Source id for scraped items that have no upstream id: a hash of the title.
 
@@ -77,6 +76,7 @@ class Opportunity:
     allocation_details: Optional[str] = None  # "Up to 30,000 H100 GPU-hours"
     eligibility: Optional[str] = None  # "Faculty PI", "Any researcher"
     access_url: Optional[str] = None  # Direct application portal URL
+    agency: Optional[str] = None  # e.g., "USDA-NIFA", "NSF", "EPA" (issuing agency)
 
     @property
     def composite_id(self) -> str:

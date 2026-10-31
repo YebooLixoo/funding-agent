@@ -152,6 +152,9 @@
               <span class="deadline-badge" style="background-color: #27AE60;">Rolling</span>
               {% endif %}
             </div>
+            {% if opp.agency %}
+            <div class="opp-agency" style="font-size: 0.85em; color: #666; font-weight: 600; margin-top: 2px;">🏛️ {{ opp.agency }}</div>
+            {% endif %}
             {% if opp.summary %}
             <div class="opp-summary">{{ opp.summary }}</div>
             {% endif %}
@@ -196,6 +199,9 @@
               <span class="deadline-badge" style="background-color: #27AE60;">Rolling</span>
               {% endif %}
             </div>
+            {% if opp.agency %}
+            <div class="opp-agency" style="font-size: 0.85em; color: #666; font-weight: 600; margin-top: 2px;">🏛️ {{ opp.agency }}</div>
+            {% endif %}
             {% if opp.summary %}
             <div class="opp-summary">{{ opp.summary }}</div>
             {% endif %}
@@ -237,6 +243,9 @@
               <span class="deadline-badge" style="background-color: #27AE60;">Rolling</span>
               {% endif %}
             </div>
+            {% if opp.agency %}
+            <div class="opp-agency" style="font-size: 0.85em; color: #666; font-weight: 600; margin-top: 2px;">🏛️ {{ opp.agency }}</div>
+            {% endif %}
             {% if opp.summary %}
             <div class="opp-summary">{{ opp.summary }}</div>
             {% endif %}
@@ -320,6 +329,9 @@
               <a href="{{ opp.url }}" style="color: #E67E22;">{{ opp.title }}</a>
               <span class="deadline-badge" style="background-color: #E67E22;">Forecasted</span>
             </div>
+            {% if opp.agency %}
+            <div class="opp-agency" style="font-size: 0.85em; color: #666; font-weight: 600; margin-top: 2px;">🏛️ {{ opp.agency }}</div>
+            {% endif %}
             {% if opp.summary %}
             <div class="opp-summary">{{ opp.summary }}</div>
             {% endif %}

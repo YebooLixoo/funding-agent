@@ -137,6 +137,18 @@ class TestEmailer:
         assert "1 opportunities" in html
         assert "Test Grant" in html
 
+    def test_digest_template_shows_agency(self):
+        emailer = Emailer(template_dir="templates")
+        opp = {"title": "Test Grant", "source": "grants_gov", "url": "https://example.com"}
+        html = emailer.compose(
+            government_opps=[{**opp, "agency": "DOT-FHWA"}],
+            industry_opps=[],
+            upcoming_deadlines=[],
+            coming_soon_opps=[{**opp, "title": "Soon", "agency": "NSF"}],
+        )
+        assert "DOT-FHWA" in html
+        assert "NSF</div>" in html
+
     def test_archive_digest(self, tmp_path: Path):
         template_dir = tmp_path / "templates"
         template_dir.mkdir()

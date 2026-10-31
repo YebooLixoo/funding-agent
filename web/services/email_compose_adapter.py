@@ -23,6 +23,7 @@ def group_by_source_type(rows) -> dict:
             "funding_amount": opp.funding_amount,
             "source": opp.source,
             "source_type": opp.source_type,
+            "agency": getattr(opp, "agency", None),
             "relevance_score": (score.relevance_score if score is not None else None),
             "resource_type": getattr(opp, "resource_type", None),
             "resource_provider": getattr(opp, "resource_provider", None),

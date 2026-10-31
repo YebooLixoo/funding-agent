@@ -18,6 +18,23 @@ logger = logging.getLogger(__name__)
 _BASE_URL = "https://api.simpler.grants.gov/v1/opportunities/search"
 
 
+def _format_agency(item: dict) -> Optional[str]:
+    """Render a compact human-friendly agency label from a grants.gov item.
+
+    Prefers ``agency_code`` (e.g. ``USDA-NIFA``) — short and unambiguous.
+    Falls back to ``top_level_agency_code`` (``USDA``), then ``agency_name``
+    (long-form). Returns None if nothing usable is present.
+    """
+    code = (item.get("agency_code") or "").strip()
+    if code:
+        return code
+    top = (item.get("top_level_agency_code") or "").strip()
+    if top:
+        return top
+    name = (item.get("agency_name") or "").strip()
+    return name or None
+
+
 @register_fetcher("grants_gov")
 class GrantsGovFetcher(BaseFetcher):
     """Fetch from Grants.gov Simpler API.
@@ -162,6 +179,7 @@ class GrantsGovFetcher(BaseFetcher):
                 posted_date=post_date,
                 funding_amount=funding,
                 opportunity_status=opp_status,
+                agency=_format_agency(item),
             )
             opportunities.append(opp)
 
@@ -291,6 +309,7 @@ class GrantsGovFetcher(BaseFetcher):
                 deadline=close_date,
                 posted_date=post_date,
                 funding_amount=funding,
+                agency=_format_agency(item),
             )
             opportunities.append(opp)
 

@@ -261,3 +261,49 @@ class TestOpportunityModel:
         )
         with pytest.raises(AttributeError):
             opp.title = "Modified"
+
+
+class TestGrantsGovAgency:
+    @pytest.mark.parametrize(
+        "item, expected",
+        [
+            ({"agency_code": "DOT-FHWA", "top_level_agency_code": "DOT",
+              "agency_name": "Federal Highway Administration"}, "DOT-FHWA"),
+            ({"agency_code": " ", "top_level_agency_code": "DOT"}, "DOT"),
+            ({"agency_code": None, "agency_name": "Federal Highway Administration"},
+             "Federal Highway Administration"),
+            ({}, None),
+        ],
+    )
+    def test_format_agency_prefers_short_code(self, item, expected):
+        from src.fetcher.grants_gov import _format_agency
+
+        assert _format_agency(item) == expected
+
+    @pytest.mark.asyncio
+    async def test_both_searches_set_agency(self, monkeypatch):
+        from unittest.mock import AsyncMock
+
+        from src.fetcher.grants_gov import GrantsGovFetcher
+
+        item = {
+            "opportunity_id": "u1",
+            "opportunity_title": "Transportation AI research",
+            "opportunity_status": "posted",
+            "agency_code": "DOT-FHWA",
+            "summary": {"post_date": "2026-10-28", "close_date": "2099-01-15"},
+        }
+        resp = MagicMock()
+        resp.json.return_value = {"data": [item]}
+        fetcher = GrantsGovFetcher()
+        monkeypatch.setattr(fetcher, "_post", AsyncMock(return_value=resp))
+        try:
+            [by_post_date] = await fetcher._search("ai", None, "2026-10-31")
+            [by_deadline] = await fetcher._search_by_deadline(
+                "ai", datetime(2026, 1, 1, tzinfo=timezone.utc),
+                datetime(2100, 1, 1, tzinfo=timezone.utc),
+            )
+        finally:
+            await fetcher.close()
+        assert by_post_date.agency == "DOT-FHWA"
+        assert by_deadline.agency == "DOT-FHWA"

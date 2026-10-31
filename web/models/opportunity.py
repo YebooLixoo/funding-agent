@@ -35,6 +35,7 @@ class Opportunity(Base):
     allocation_details: Mapped[str | None] = mapped_column(String(512), nullable=True)
     eligibility: Mapped[str | None] = mapped_column(String(256), nullable=True)
     access_url: Mapped[str | None] = mapped_column(String(2048), nullable=True)
+    agency: Mapped[str | None] = mapped_column(String(128), nullable=True)
     fetched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     fetched_for_user_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
